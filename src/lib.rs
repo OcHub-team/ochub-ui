@@ -7,6 +7,7 @@
 pub mod anim;
 pub mod assets;
 pub mod chart;
+#[cfg(not(target_family = "wasm"))]
 pub mod code_editor;
 pub mod components;
 pub mod diff_view;
@@ -26,11 +27,13 @@ pub mod window_chrome;
 // element. This guarantees that component and application types come from the
 // same pinned Zed revision.
 pub use gpui;
+#[cfg(not(target_family = "wasm"))]
 pub use zed_text;
 
 /// Install every key binding owned by the component library.
 pub fn install(cx: &mut gpui::App) {
     text_input::bind_keys(cx);
+    #[cfg(not(target_family = "wasm"))]
     code_editor::bind_keys(cx);
     layout::bind_keys(cx);
 }

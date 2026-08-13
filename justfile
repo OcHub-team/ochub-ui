@@ -9,6 +9,9 @@ test:
 gallery:
     cargo run --example gallery
 
+wasm:
+    cargo +nightly -Zbuild-std=std,panic_abort check --target wasm32-unknown-unknown --lib --example gallery --locked
+
 fmt:
     cargo fmt --all
 

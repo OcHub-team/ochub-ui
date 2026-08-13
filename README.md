@@ -5,10 +5,24 @@ It contains theme tokens, layout primitives, controls, text and code editors,
 charts, notifications, window chrome, and embedded icons. Product views and
 business services remain in the consuming application.
 
-The crate intentionally pins GPUI and `zed-text` to one Zed revision. Use the
-re-exported `ochub_ui::gpui` and `ochub_ui::zed_text` types in custom elements,
-or pin direct dependencies to the same revision documented in
-[`COMPATIBILITY.md`](COMPATIBILITY.md).
+The crate intentionally pins GPUI and the desktop-only `zed-text` integration
+to one Zed revision. Use the re-exported `ochub_ui::gpui` types in custom
+elements, and `ochub_ui::zed_text` on desktop, or pin direct dependencies to
+the same revision documented in [`COMPATIBILITY.md`](COMPATIBILITY.md).
+
+The component gallery, theme, layout, controls, text input, icons, charts, and
+notifications support GPUI's WebGPU-backed WASM platform. The code editor is
+desktop-only because Zed's `text` dependency currently includes native process
+and filesystem utilities.
+
+## Installation
+
+Releases use semantic versions and matching Git tags. Depend on the release tag
+instead of an arbitrary commit:
+
+```toml
+ochub-ui = { version = "0.1.1", git = "https://github.com/OcHub-team/ochub-ui", tag = "v0.1.1" }
+```
 
 ```rust,ignore
 use ochub_ui::{components, gpui, theme};
