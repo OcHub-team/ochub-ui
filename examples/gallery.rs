@@ -19,11 +19,22 @@ impl AssetSource for GalleryAssets {
     }
 }
 
-#[cfg_attr(target_family = "wasm", wasm_bindgen::prelude::wasm_bindgen(start))]
+#[cfg(not(target_family = "wasm"))]
 fn main() {
-    #[cfg(target_family = "wasm")]
-    gpui_platform::web_init();
+    run();
+}
 
+#[cfg(target_family = "wasm")]
+fn main() {}
+
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen::prelude::wasm_bindgen(start)]
+pub fn start() {
+    gpui_platform::web_init();
+    run();
+}
+
+fn run() {
     application()
         .with_assets(GalleryAssets)
         .run(|cx: &mut App| {

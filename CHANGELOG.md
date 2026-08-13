@@ -2,6 +2,12 @@
 
 All notable changes to `ochub-ui` are documented here.
 
+## 0.1.2 - 2026-08-13
+
+- Split the gallery's native and WebAssembly entry points so final WASM linking
+  does not declare `main` twice.
+- Strengthened WebAssembly CI from type checking to a complete linked build.
+
 ## 0.1.1 - 2026-08-13
 
 - Added WebAssembly support for the component gallery and browser-compatible
