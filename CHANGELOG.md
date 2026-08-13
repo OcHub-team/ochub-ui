@@ -2,6 +2,12 @@
 
 All notable changes to `ochub-ui` are documented here.
 
+## 0.3.1 - 2026-08-13
+
+- Share the canonical gateway station card, usage summary grid, settings group,
+  theme card and mode block, plus the common product-page frame.
+- Remove the last page-structure copies from the GPUI Web documentation scenes.
+
 ## 0.3.0 - 2026-08-13
 
 - Add portable product-level screen composition for the OcHub application

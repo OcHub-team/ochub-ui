@@ -23,7 +23,7 @@ Releases use semantic versions and matching Git tags. Depend on the release tag
 instead of an arbitrary commit:
 
 ```toml
-ochub-ui = { version = "0.3.0", git = "https://github.com/OcHub-team/ochub-ui", tag = "v0.3.0" }
+ochub-ui = { version = "0.3.1", git = "https://github.com/OcHub-team/ochub-ui", tag = "v0.3.1" }
 ```
 
 ```rust,ignore
