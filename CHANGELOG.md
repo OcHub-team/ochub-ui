@@ -2,6 +2,17 @@
 
 All notable changes to `ochub-ui` are documented here.
 
+## 0.3.0 - 2026-08-13
+
+- Add portable product-level screen composition for the OcHub application
+  shell, 252px navigation sidebar, provider list cards, active-provider hero,
+  provider editor, MCP cards, skill cards, and session cards.
+- Make screen APIs accept resolved labels, view-model values, and semantic
+  action elements so native hosts keep storage/network access while the
+  documentation site can render the same GPUI tree with demo adapters.
+- Centralize provider-editor breakpoints and collapsed preview composition so
+  desktop and WebAssembly layouts cannot drift independently.
+
 ## 0.2.0 - 2026-08-13
 
 - Keep the embedded GPUI application handle alive for the browser page lifetime,

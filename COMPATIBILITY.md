@@ -5,6 +5,7 @@ Every `ochub-ui` release therefore identifies one exact Zed Git revision.
 
 | ochub-ui | Zed / GPUI revision | Minimum Rust |
 |---|---|---|
+| 0.3.x | `a8fafdd7ee36fb3fb98ebbfe5d3be983301d9e74` | 1.97.0 |
 | 0.2.x | `a8fafdd7ee36fb3fb98ebbfe5d3be983301d9e74` | 1.97.0 |
 | 0.1.x | `a736da2a80964cf1b2f605bd7e8805f8da1acc52` | 1.97.0 |
 

@@ -2,8 +2,10 @@
 
 `ochub-ui` is the independently versioned GPUI design system used by OcHub.
 It contains theme tokens, layout primitives, controls, text and code editors,
-charts, notifications, window chrome, and embedded icons. Product views and
-business services remain in the consuming application.
+charts, notifications, window chrome, embedded icons, and portable OcHub
+screen composition. Business services remain in the consuming application;
+desktop and WebAssembly hosts provide view models and semantic actions to the
+same product-level view tree.
 
 The crate intentionally pins GPUI and the desktop-only `zed-text` integration
 to one Zed revision. Use the re-exported `ochub_ui::gpui` types in custom
@@ -21,7 +23,7 @@ Releases use semantic versions and matching Git tags. Depend on the release tag
 instead of an arbitrary commit:
 
 ```toml
-ochub-ui = { version = "0.2.0", git = "https://github.com/OcHub-team/ochub-ui", tag = "v0.2.0" }
+ochub-ui = { version = "0.3.0", git = "https://github.com/OcHub-team/ochub-ui", tag = "v0.3.0" }
 ```
 
 ```rust,ignore

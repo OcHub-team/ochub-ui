@@ -1,8 +1,10 @@
 //! The reusable GPUI design system used by OcHub desktop applications.
 //!
-//! The crate owns presentation primitives only. It deliberately has no
-//! dependency on `ochub-core`, application storage, networking, or product
-//! views, so releases can be maintained independently from the OcHub app.
+//! The crate owns presentation primitives and OcHub's product-level screen
+//! composition. It deliberately has no dependency on `ochub-core`,
+//! application storage, or networking: native hosts and WASM documentation
+//! provide view models and semantic actions while rendering the same view
+//! tree.
 
 pub mod anim;
 pub mod assets;
@@ -18,6 +20,7 @@ pub mod i18n;
 pub mod icons;
 pub mod layout;
 pub mod notifications;
+pub mod screens;
 pub mod scrollbar;
 pub mod text_input;
 pub mod theme;
