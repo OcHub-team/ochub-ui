@@ -2,6 +2,11 @@
 
 All notable changes to `ochub-ui` are documented here.
 
+## 0.3.2 - 2026-08-13
+
+- Expand the embedded Noto Sans CJK subset to cover all current OcHub desktop
+  and documentation labels, including the newly shared navigation and page copy.
+
 ## 0.3.1 - 2026-08-13
 
 - Share the canonical gateway station card, usage summary grid, settings group,
