@@ -2,6 +2,15 @@
 
 All notable changes to `ochub-ui` are documented here.
 
+## 0.2.0 - 2026-08-13
+
+- Keep the embedded GPUI application handle alive for the browser page lifetime,
+  preventing the WebAssembly gallery from being released before its first frame.
+- Move to Zed / GPUI `a8fafdd7` for its re-entrant-safe web resize and frame
+  callbacks, which allow WebGPU surfaces to adopt their real browser dimensions.
+- Embed an OFL-licensed, component-catalog CJK fallback so Chinese and Japanese
+  labels render consistently in GPUI Web instead of missing-glyph boxes.
+
 ## 0.1.2 - 2026-08-13
 
 - Split the gallery's native and WebAssembly entry points so final WASM linking

@@ -9,6 +9,8 @@ use std::borrow::Cow;
 
 use gpui::SharedString;
 
+const CJK_FONT_PATH: &str = "fonts/OcHubNotoSansCJK-Regular.otf";
+
 include!(concat!(env!("OUT_DIR"), "/embedded_assets.rs"));
 
 /// Load one library asset by its GPUI path.
@@ -39,6 +41,18 @@ pub fn list(path: &str) -> Vec<SharedString> {
     names
 }
 
+/// Register the compact CJK fallback used by browser builds.
+///
+/// Native platforms can normally find system CJK fonts, while GPUI Web starts
+/// with a deliberately small Latin-only font set. Registering the same subset
+/// everywhere keeps Chinese and Japanese component labels deterministic.
+pub fn install_fonts(cx: &mut gpui::App) {
+    let font = load(CJK_FONT_PATH).expect("embedded OcHub CJK font");
+    cx.text_system()
+        .add_fonts(vec![font])
+        .expect("register embedded OcHub CJK font");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -52,5 +66,11 @@ mod tests {
                 .any(|name| name.as_ref() == "check.svg")
         );
         assert!(list("icons").iter().any(|name| name.as_ref() == "agents"));
+    }
+
+    #[test]
+    fn embeds_cjk_font_and_license() {
+        assert!(load(CJK_FONT_PATH).is_some());
+        assert!(load("fonts/LICENSE-NOTO-CJK.txt").is_some());
     }
 }

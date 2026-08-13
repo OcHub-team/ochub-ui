@@ -32,6 +32,7 @@ pub use zed_text;
 
 /// Install every key binding owned by the component library.
 pub fn install(cx: &mut gpui::App) {
+    assets::install_fonts(cx);
     text_input::bind_keys(cx);
     #[cfg(not(target_family = "wasm"))]
     code_editor::bind_keys(cx);
