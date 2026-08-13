@@ -44,6 +44,7 @@ pub fn theme_card(spec: ThemeCard) -> gpui::Div {
                             div()
                                 .flex()
                                 .flex_col()
+                                .flex_1()
                                 .min_w_0()
                                 .gap_1()
                                 .child(

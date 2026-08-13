@@ -2,6 +2,11 @@
 
 All notable changes to `ochub-ui` are documented here.
 
+## 0.3.3 - 2026-08-13
+
+- Keep theme-card identity text at a usable width in two-column and narrow
+  layouts instead of allowing GPUI flex shrink to wrap it one glyph per line.
+
 ## 0.3.2 - 2026-08-13
 
 - Expand the embedded Noto Sans CJK subset to cover all current OcHub desktop
