@@ -2,6 +2,11 @@
 
 All notable changes to `ochub-ui` are documented here.
 
+## 0.5.1 - 2026-08-21
+
+- Expose the existing `TextInput::search_field` constructor so component-library
+  consumers can use the canonical search-field treatment.
+
 ## 0.5.0 - 2026-08-21
 
 - Add a plain `transparent` window background effect alongside the existing

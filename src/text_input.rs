@@ -580,7 +580,8 @@ impl TextInput {
     }
 
     /// Compact text field used by the editor's non-modal find bar.
-    pub(crate) fn search_field(mut self) -> Self {
+    /// Apply the canonical compact search-field treatment.
+    pub fn search_field(mut self) -> Self {
         self.search_field = true;
         self
     }
