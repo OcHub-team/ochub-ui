@@ -1,0 +1,23 @@
+ochub-ui
+Copyright 2026 OcHub contributors
+
+This crate's first-party source is dual-licensed under MIT OR Apache-2.0
+(see LICENSE-MIT and LICENSE-APACHE).
+
+Third-party notices
+-------------------
+
+Embedded Noto Sans CJK catalog font
+  License: SIL Open Font License 1.1
+  See assets/fonts/LICENSE-NOTO-CJK.txt
+
+GPUI and zed-text (Zed Industries)
+  ochub-ui pins GPUI to Zed revision
+  a8fafdd7ee36fb3fb98ebbfe5d3be983301d9e74 (see COMPATIBILITY.md).
+  The gpui crate declares Apache-2.0. That Zed revision may still pull
+  GPL-3.0-or-later first-party crates transitively (historically
+  sum_tree -> ztracing). Relicensing ochub-ui source does not make a
+  binary that statically links those crates MIT OR Apache-2.0. Audit
+  `cargo tree` / license scan before distributing binaries if you need
+  a permissive-only dependency graph. This release does not bump the
+  GPUI pin.

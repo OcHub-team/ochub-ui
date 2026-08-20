@@ -1,12 +1,12 @@
 [package]
 name = "ochub-ui"
-version = "0.3.3"
+version = "0.4.0"
 edition = "2024"
 rust-version = "1.97.0"
-license = "GPL-3.0-or-later"
+license = "MIT OR Apache-2.0"
 authors = ["OcHub contributors"]
 repository = "https://github.com/OcHub-team/ochub-ui"
-description = "OcHub's reusable GPUI design system for native and WebAssembly applications"
+description = "Reusable GPUI components for native and WebAssembly applications"
 readme = "README.md"
 keywords = ["gpui", "desktop", "ui", "ochub"]
 categories = ["gui"]

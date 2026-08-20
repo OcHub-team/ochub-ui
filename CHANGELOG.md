@@ -2,6 +2,16 @@
 
 All notable changes to `ochub-ui` are documented here.
 
+## 0.4.0 - 2026-08-20
+
+- Restore the crate's boundary as a reusable component library.
+- Remove the product-specific `screens` API. OcHub application and
+  documentation compositions now live in their respective consumers.
+- Relicense first-party source as MIT OR Apache-2.0. GPUI pin remains
+  `a8fafdd7`; see `NOTICE` for transitive dependency license risk.
+- Git tag `v0.4.0` is the intended release id after the license commit.
+- No GPUI revision change.
+
 ## 0.3.3 - 2026-08-13
 
 - Keep theme-card identity text at a usable width in two-column and narrow

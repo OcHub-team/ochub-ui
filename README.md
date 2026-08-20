@@ -1,11 +1,12 @@
 # ochub-ui
 
-`ochub-ui` is the independently versioned GPUI design system used by OcHub.
-It contains theme tokens, layout primitives, controls, text and code editors,
-charts, notifications, window chrome, embedded icons, and portable OcHub
-screen composition. Business services remain in the consuming application;
-desktop and WebAssembly hosts provide view models and semantic actions to the
-same product-level view tree.
+`ochub-ui` is an independently versioned GPUI component library used by OcHub.
+It contains reusable theme primitives, layouts, controls, text and code
+editors, charts, notifications, window chrome, and embedded assets.
+
+The crate deliberately does not define OcHub product screens, navigation,
+business view models, storage, or networking. Consumers compose the generic
+components into their own application UI.
 
 The crate intentionally pins GPUI and the desktop-only `zed-text` integration
 to one Zed revision. Use the re-exported `ochub_ui::gpui` types in custom
@@ -23,7 +24,7 @@ Releases use semantic versions and matching Git tags. Depend on the release tag
 instead of an arbitrary commit:
 
 ```toml
-ochub-ui = { version = "0.3.3", git = "https://github.com/OcHub-team/ochub-ui", tag = "v0.3.3" }
+ochub-ui = { version = "0.4.0", git = "https://github.com/OcHub-team/ochub-ui", tag = "v0.4.0" }
 ```
 
 ```rust,ignore
@@ -48,4 +49,7 @@ cargo clippy --all-targets --locked -- -D warnings
 cargo test --all-targets --locked
 ```
 
-Licensed under GPL-3.0-or-later.
+Licensed under MIT OR Apache-2.0. See [`LICENSE-MIT`](LICENSE-MIT),
+[`LICENSE-APACHE`](LICENSE-APACHE), and [`NOTICE`](NOTICE). `NOTICE` also
+records the GPUI pin's possible transitive GPL risk; this crate's own source
+is permissive, but binaries that link GPUI must still be audited.
