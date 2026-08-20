@@ -91,6 +91,9 @@ impl<'de> Deserialize<'de> for ThemeColor {
 pub enum ThemeWindowBackground {
     /// Render against a fully opaque native window.
     Opaque,
+    /// Let the desktop show through transparent GPUI surfaces without applying
+    /// a backdrop blur.
+    Transparent,
     /// Use the platform's background blur. The exact blur radius and material
     /// remain system-controlled.
     #[default]
@@ -101,6 +104,7 @@ impl ThemeWindowBackground {
     pub const fn appearance(self) -> WindowBackgroundAppearance {
         match self {
             Self::Blurred => WindowBackgroundAppearance::Blurred,
+            Self::Transparent => WindowBackgroundAppearance::Transparent,
             Self::Opaque => WindowBackgroundAppearance::Opaque,
         }
     }
@@ -1224,15 +1228,15 @@ pub fn apply_window_background(window: &Window) {
     window.set_background_appearance(window_background_appearance());
 }
 
-/// The root only supplies a fallback color for opaque windows. Blurred windows
-/// must leave the root clear so translucent child surfaces can reveal the
-/// platform backdrop.
+/// The root only supplies a fallback color for opaque windows. Transparent and
+/// blurred windows must leave the root clear so translucent child surfaces can
+/// reveal the platform backdrop.
 #[inline]
 pub fn window_base_background() -> Rgba {
     let palette = current();
     let background = palette.bg.rgba();
     match palette.effects.window_background {
-        ThemeWindowBackground::Blurred => background.alpha(0.),
+        ThemeWindowBackground::Blurred | ThemeWindowBackground::Transparent => background.alpha(0.),
         ThemeWindowBackground::Opaque => background,
     }
 }
@@ -1457,6 +1461,22 @@ mod tests {
 
         family.dark.effects.content_opacity = MAX_SURFACE_OPACITY_PERCENT + 1;
         assert!(validate_family(&family).is_err());
+    }
+
+    #[test]
+    fn window_background_effects_map_to_distinct_platform_treatments() {
+        assert_eq!(
+            ThemeWindowBackground::Opaque.appearance(),
+            WindowBackgroundAppearance::Opaque
+        );
+        assert_eq!(
+            ThemeWindowBackground::Transparent.appearance(),
+            WindowBackgroundAppearance::Transparent
+        );
+        assert_eq!(
+            ThemeWindowBackground::Blurred.appearance(),
+            WindowBackgroundAppearance::Blurred
+        );
     }
 
     #[test]

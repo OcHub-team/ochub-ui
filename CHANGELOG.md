@@ -2,6 +2,15 @@
 
 All notable changes to `ochub-ui` are documented here.
 
+## 0.5.0 - 2026-08-21
+
+- Add a plain `transparent` window background effect alongside the existing
+  opaque and blurred treatments, allowing hosts to control translucency and
+  backdrop blur independently.
+- Keep legacy theme files compatible: omitted window effects still default to
+  the blurred treatment.
+- No GPUI revision change.
+
 ## 0.4.0 - 2026-08-20
 
 - Restore the crate's boundary as a reusable component library.
