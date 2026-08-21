@@ -232,6 +232,81 @@ pub fn icon_only_button_tone(
         .child(icon(name, fg, icon_size))
 }
 
+// ── Context menus ───────────────────────────────────────────────
+
+/// Floating menu chrome shared by desktop clients.
+///
+/// The owner decides where to anchor the returned element and owns dismissal.
+/// Pointer events are stopped at the menu boundary so an outside-click layer
+/// can sit behind it without swallowing item activation.
+pub fn context_menu(
+    id: impl Into<ElementId>,
+    children: Vec<AnyElement>,
+) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(id)
+        .role(gpui::Role::Menu)
+        .flex()
+        .flex_col()
+        .w(px(208.))
+        .p_1()
+        .rounded_lg()
+        .border_1()
+        .border_color(theme::border_strong())
+        .bg(theme::panel())
+        .shadow(theme::shadow_popover())
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .children(children)
+}
+
+/// A compact context-menu row. Attach `.on_click(...)` at the call site.
+pub fn context_menu_item(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    shortcut: Option<impl Into<SharedString>>,
+    name: Option<IconName>,
+    danger: bool,
+) -> gpui::Stateful<gpui::Div> {
+    let label = label.into();
+    let shortcut = shortcut.map(Into::into);
+    let foreground = if danger { theme::red() } else { theme::text() };
+    div()
+        .id(id)
+        .role(gpui::Role::MenuItem)
+        .aria_label(label.clone())
+        .flex()
+        .items_center()
+        .gap_2()
+        .h(px(30.))
+        .px_2()
+        .rounded_md()
+        .text_sm()
+        .text_color(foreground)
+        .cursor_pointer()
+        .hover(move |style| {
+            style.bg(if danger {
+                theme::red_soft()
+            } else {
+                theme::surface_hover()
+            })
+        })
+        .when_some(name, |row, name| {
+            row.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .w(px(18.))
+                    .child(icon(name, foreground, 13.)),
+            )
+        })
+        .when(name.is_none(), |row| row.child(div().w(px(18.))))
+        .child(div().flex_1().min_w_0().truncate().child(label))
+        .when_some(shortcut, |row, shortcut| {
+            row.child(div().text_xs().text_color(theme::muted()).child(shortcut))
+        })
+}
+
 // Back-compat shims (existing call sites) — new code should use `button` /
 // `icon_button_tone` with an explicit tone+size.
 pub fn action_button(
