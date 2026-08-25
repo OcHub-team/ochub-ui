@@ -7,6 +7,7 @@
 //! / [`TextInput::set_content`].
 
 use std::ops::Range;
+use std::rc::Rc;
 use std::time::Duration;
 
 use gpui::{
@@ -291,7 +292,7 @@ pub struct TextInput {
 impl gpui::EventEmitter<TextInputEvent> for TextInput {}
 
 /// 单行 Enter 提交回调的签名（如翻页条“跳至 X 页”）。
-type EnterHandler = Box<dyn Fn(&mut Window, &mut App)>;
+type EnterHandler = Rc<dyn Fn(&mut Window, &mut App)>;
 
 /// Byte ranges for non-overlapping matches. ASCII matching is case-insensitive;
 /// non-ASCII text (including Chinese) remains exact so byte offsets stay stable.
@@ -594,7 +595,7 @@ impl TextInput {
 
     /// 注册单行 Enter 提交回调（如翻页条的“跳至 X 页”）。
     pub fn set_on_enter(&mut self, callback: impl Fn(&mut Window, &mut App) + 'static) {
-        self.on_enter = Some(Box::new(callback));
+        self.on_enter = Some(Rc::new(callback));
     }
 
     /// Render as a multiline code editor (monospace, line numbers, real line
@@ -1141,8 +1142,12 @@ impl TextInput {
     fn newline(&mut self, _: &Newline, window: &mut Window, cx: &mut Context<Self>) {
         if self.multiline {
             self.replace_text_in_range(None, "\n", window, cx);
-        } else if let Some(on_enter) = &self.on_enter {
-            on_enter(window, cx);
+        } else if let Some(on_enter) = self.on_enter.clone() {
+            // `newline` runs while this TextInput entity owns its mutable GPUI
+            // lease. Hosts commonly read the submitted input in their Enter
+            // handler, so invoking it synchronously would try to lease this
+            // entity again and panic. Release the current update first.
+            window.defer(cx, move |window, cx| on_enter(window, cx));
         } else {
             window.play_system_bell();
         }
@@ -2166,13 +2171,55 @@ impl Element for CodeElement {
 
 #[cfg(test)]
 mod tests {
-    use gpui::{Bounds, point, px, size};
+    use gpui::{
+        Bounds, Context, Entity, Focusable, IntoElement, Render, TestAppContext, div, point,
+        prelude::*, px, size,
+    };
 
     use super::{
-        CaretBlink, accessible_value, closest_match, code_visible_rows, display_offset,
-        extend_word_selection, find_matches, horizontal_scroll_for_caret, raw_offset_from_display,
-        surrounding_word_range, utf8_offset_from_utf16,
+        CaretBlink, TextInput, accessible_value, bind_keys, closest_match, code_visible_rows,
+        display_offset, extend_word_selection, find_matches, horizontal_scroll_for_caret,
+        raw_offset_from_display, surrounding_word_range, utf8_offset_from_utf16,
     };
+
+    struct EnterProbe {
+        input: Entity<TextInput>,
+        submitted: bool,
+    }
+
+    impl Render for EnterProbe {
+        fn render(&mut self, _: &mut gpui::Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().child(self.input.clone())
+        }
+    }
+
+    #[gpui::test]
+    fn enter_handler_can_read_the_input_after_its_update(cx: &mut TestAppContext) {
+        cx.update(bind_keys);
+        let (probe, cx) = cx.add_window_view(|window, cx| {
+            let input = cx.new(|cx| TextInput::new(cx, "name").with_content("alpha"));
+            let weak_probe = cx.weak_entity();
+            input.update(cx, |input, _| {
+                input.set_on_enter(move |_window, cx| {
+                    weak_probe
+                        .update(cx, |probe: &mut EnterProbe, cx| {
+                            assert_eq!(probe.input.read(cx).content().as_ref(), "alpha");
+                            probe.submitted = true;
+                        })
+                        .expect("enter probe remains alive");
+                });
+            });
+            input.read(cx).focus_handle(cx).focus(window, cx);
+            EnterProbe {
+                input,
+                submitted: false,
+            }
+        });
+
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        probe.read_with(cx, |probe, _| assert!(probe.submitted));
+    }
 
     /// The composition caret arrives as a UTF-16 offset into the marked text.
     /// Measuring it there (rather than against the whole field) is what keeps
