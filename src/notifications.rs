@@ -608,6 +608,11 @@ impl NotificationHost {
         div()
             .id(element_id)
             .relative()
+            // Toasts float over interactive product surfaces. Without an
+            // occluding hitbox, a terminal or canvas underneath can consume
+            // mouse-down first and prevent these controls from receiving a
+            // complete click.
+            .occlude()
             .flex()
             .flex_col()
             .w_full()
@@ -683,6 +688,7 @@ impl NotificationHost {
                             .child(
                                 div()
                                     .id(("notification-copy", id))
+                                    .debug_selector(move || format!("notification-copy-{id}"))
                                     .role(gpui::Role::Button)
                                     .aria_label("复制通知内容")
                                     .flex()
