@@ -14,7 +14,7 @@ categories = ["gui"]
 [dependencies]
 anyhow = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
-gpui = { git = "https://github.com/OcHub-team/zed", package = "gpui", rev = "186ff5fc775fb9c807d6bc21b82e78f9d0cbbbe5" }
+gpui = { git = "https://github.com/OcHub-team/zed", package = "gpui", rev = "46788f4fa0a958408027430e5b5bb43a2d20cf07" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 similar = { version = "2.7", default-features = false, features = ["text"] }
@@ -22,20 +22,20 @@ tempfile = "3"
 unicode-segmentation = "1"
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-zed-text = { git = "https://github.com/OcHub-team/zed", package = "text", rev = "186ff5fc775fb9c807d6bc21b82e78f9d0cbbbe5" }
+zed-text = { git = "https://github.com/OcHub-team/zed", package = "text", rev = "46788f4fa0a958408027430e5b5bb43a2d20cf07" }
 
 [target.'cfg(target_family = "wasm")'.dev-dependencies]
-gpui_platform = { git = "https://github.com/OcHub-team/zed", package = "gpui_platform", rev = "186ff5fc775fb9c807d6bc21b82e78f9d0cbbbe5" }
+gpui_platform = { git = "https://github.com/OcHub-team/zed", package = "gpui_platform", rev = "46788f4fa0a958408027430e5b5bb43a2d20cf07" }
 wasm-bindgen = "0.2"
 
 [target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
-gpui = { git = "https://github.com/OcHub-team/zed", package = "gpui", rev = "186ff5fc775fb9c807d6bc21b82e78f9d0cbbbe5", features = ["test-support"] }
+gpui = { git = "https://github.com/OcHub-team/zed", package = "gpui", rev = "46788f4fa0a958408027430e5b5bb43a2d20cf07", features = ["test-support"] }
 
 [build-dependencies]
 toml = "1.1"
 
 [dev-dependencies]
-gpui_platform = { git = "https://github.com/OcHub-team/zed", package = "gpui_platform", rev = "186ff5fc775fb9c807d6bc21b82e78f9d0cbbbe5", features = ["font-kit", "runtime_shaders", "wayland", "x11"] }
+gpui_platform = { git = "https://github.com/OcHub-team/zed", package = "gpui_platform", rev = "46788f4fa0a958408027430e5b5bb43a2d20cf07", features = ["font-kit", "runtime_shaders", "wayland", "x11"] }
 
 [patch.crates-io]
 async-process = { git = "https://github.com/zed-industries/async-process.git", rev = "0b6d6713570af61806e1e5cb40e0f757cb93fd9d" }
