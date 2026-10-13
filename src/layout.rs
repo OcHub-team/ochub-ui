@@ -49,6 +49,7 @@ use crate::icons::{IconName, icon};
 use crate::scrollbar::{VerticalScrollbar, contain_vertical_scroll};
 use crate::tf;
 use crate::theme;
+use crate::tokens::{self, ConsoleStyle, TextRole};
 
 type RowActivation = Rc<dyn Fn(&mut Window, &mut App)>;
 type RowSelectEventHandler = Rc<dyn Fn(SelectRowEvent, &mut Window, &mut App)>;
@@ -101,8 +102,7 @@ pub fn page_header(title: impl Into<SharedString>, subtitle: Option<SharedString
             .min_w_0()
             .truncate()
             .text_color(theme::text())
-            .text_xl()
-            .font_weight(FontWeight::BOLD)
+            .text_role(TextRole::PageTitle)
             .child(title.into()),
     );
     if let Some(subtitle) = subtitle {
@@ -111,7 +111,7 @@ pub fn page_header(title: impl Into<SharedString>, subtitle: Option<SharedString
                 .min_w_0()
                 .truncate()
                 .text_color(theme::muted())
-                .text_xs()
+                .text_role(TextRole::Caption)
                 .child(subtitle),
         );
     }
@@ -122,7 +122,8 @@ pub fn page_header(title: impl Into<SharedString>, subtitle: Option<SharedString
         .justify_between()
         .gap_4()
         .px_6()
-        .py_4()
+        .py_3()
+        .min_h(px(tokens::layout::TOOLBAR_HEIGHT))
         .border_b_1()
         .border_color(theme::border())
         .child(title_col)
@@ -266,6 +267,39 @@ pub fn wide_column() -> gpui::Div {
         .max_w(px(WIDE_MAX_WIDTH))
 }
 
+/// Data pages may use the available width instead of a form's reading width.
+/// Individual tables still declare their own minimum column widths.
+pub fn fluid_column() -> gpui::Div {
+    div()
+        .flex()
+        .flex_col()
+        .items_start()
+        .gap_4()
+        .w_full()
+        .min_w_0()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InspectorMode {
+    Beside,
+    Overlay,
+}
+
+/// Use the containing content pane width, after navigation/chrome subtraction.
+/// A narrow page opens the inspector as an overlay rather than compressing its
+/// main table into an unusable third column.
+pub fn inspector_mode(content_width: f32) -> InspectorMode {
+    if content_width
+        >= tokens::layout::MIN_PRIMARY_WITH_INSPECTOR
+            + tokens::layout::INSPECTOR_WIDTH
+            + tokens::space::XL
+    {
+        InspectorMode::Beside
+    } else {
+        InspectorMode::Overlay
+    }
+}
+
 /// A section header above a [`group`]: small semibold title, plus a muted line
 /// reserved for data (a count, a path) — never for explaining what the section is.
 pub fn section_header(
@@ -280,15 +314,14 @@ pub fn section_header(
         .child(
             div()
                 .text_color(theme::text())
-                .text_sm()
-                .font_weight(FontWeight::SEMIBOLD)
+                .text_role(TextRole::SectionTitle)
                 .child(title.into()),
         )
         .when_some(description, |header, description| {
             header.child(
                 div()
                     .text_color(theme::muted())
-                    .text_xs()
+                    .text_role(TextRole::Caption)
                     .child(description),
             )
         })

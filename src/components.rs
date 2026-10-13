@@ -24,6 +24,7 @@ use crate::scrollbar::VerticalScrollbar;
 use crate::text_input::TextInput;
 use crate::tf;
 use crate::theme;
+use crate::tokens::{self, ConsoleStyle, TextRole};
 
 // ── Buttons ────────────────────────────────────────────────────────────────
 
@@ -38,9 +39,9 @@ pub enum ButtonTone {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ButtonSize {
-    /// Compact default (px_3 py_1).
+    /// A 28px control for dense rows and toolbars.
     Sm,
-    /// Roomier variant (px_4 py_1.5) for page-level primary actions.
+    /// A 32px control aligned with standard form inputs.
     Md,
 }
 
@@ -190,10 +191,15 @@ fn button_base(
         .id(id)
         .role(gpui::Role::Button)
         .aria_label(label)
-        .rounded_md()
+        .rounded(px(tokens::radius::CONTROL))
         .bg(bg)
         .text_color(fg)
-        .text_sm()
+        .text_role(TextRole::Body)
+        .flex()
+        .items_center()
+        .justify_center()
+        .flex_none()
+        .whitespace_nowrap()
         .font_weight(if tone.is_emphasis() {
             FontWeight::SEMIBOLD
         } else {
@@ -205,8 +211,8 @@ fn button_base(
             .hover(|s| s.bg(hover_bg));
     }
     match size {
-        ButtonSize::Sm => base.px_3().py_1(),
-        ButtonSize::Md => base.px_4().py(px(6.)),
+        ButtonSize::Sm => base.px_3().h(px(tokens::control::COMPACT)),
+        ButtonSize::Md => base.px_3().h(px(tokens::control::DEFAULT)),
     }
 }
 
@@ -222,8 +228,8 @@ pub fn icon_only_button_tone(
     let (_, _, fg) = tone.colors();
     let label = label.into();
     let (button_size, icon_size) = match size {
-        ButtonSize::Sm => (28., 14.),
-        ButtonSize::Md => (32., 16.),
+        ButtonSize::Sm => (tokens::control::COMPACT, tokens::control::ICON_SMALL),
+        ButtonSize::Md => (tokens::control::DEFAULT, tokens::control::ICON),
     };
     button_base(id, label, tone, size, true)
         .p_0()
@@ -446,7 +452,7 @@ pub fn field_with_error(
         .flex()
         .flex_row()
         .gap_1()
-        .text_xs()
+        .text_role(TextRole::Caption)
         .font_weight(FontWeight::MEDIUM)
         .text_color(theme::subtext())
         .child(label.into());
@@ -480,7 +486,7 @@ pub fn field_with_error(
 pub fn field_error(message: impl Into<SharedString>) -> gpui::Div {
     div()
         .text_color(theme::red())
-        .text_xs()
+        .text_role(TextRole::Caption)
         .child(message.into())
 }
 

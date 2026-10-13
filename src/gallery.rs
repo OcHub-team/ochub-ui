@@ -2,17 +2,23 @@
 //! component in every state so visual tuning and regression checks don't
 //! require clicking through the whole app (GPUI has no hot reload).
 
-use gpui::{Context, FontWeight, ScrollHandle, SharedString, Window, div, prelude::*, px};
+use gpui::{Context, ScrollHandle, SharedString, Window, div, prelude::*, px};
 
 use crate::components::{self, BadgeTone, ButtonSize, ButtonTone};
 use crate::icons::IconName;
 use crate::layout;
+use crate::navigation;
+use crate::notifications::{NotificationHost, NotificationLevel, NotificationRequest};
+use crate::table::{self, Column};
 use crate::text_input::TextInput;
 use crate::theme;
+use crate::tokens::{ConsoleStyle, TextRole};
 
 pub struct GalleryView {
     demo_input: gpui::Entity<TextInput>,
     secret_input: gpui::Entity<TextInput>,
+    compact_input: gpui::Entity<TextInput>,
+    notifications: gpui::Entity<NotificationHost>,
     scroll_handle: ScrollHandle,
 }
 
@@ -21,6 +27,8 @@ impl GalleryView {
         Self {
             demo_input: cx.new(|cx| TextInput::new(cx, "https://example.com")),
             secret_input: cx.new(|cx| TextInput::new(cx, "sk-ant-…")),
+            compact_input: cx.new(|cx| TextInput::new(cx, "中日英 · 日本語 · Search").compact()),
+            notifications: cx.new(|_| NotificationHost::new()),
             scroll_handle: ScrollHandle::new(),
         }
     }
@@ -50,7 +58,7 @@ impl GalleryView {
 }
 
 impl gpui::Render for GalleryView {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let buttons = components::card()
             .gap_3()
             .child(Self::demo_row(vec![
@@ -104,7 +112,143 @@ impl gpui::Render for GalleryView {
                 "随应用自动启动",
                 Some("启动 OcHub 时自动拉起网关（端点地址保持稳定）。".into()),
                 layout::toggle(true),
+            ))
+            .child(Self::demo_row(vec![
+                div()
+                    .w(px(240.))
+                    .child(self.compact_input.clone())
+                    .into_any_element(),
+                components::button("g-compact", "28px", ButtonTone::Neutral, ButtonSize::Sm)
+                    .into_any_element(),
+            ]))
+            .child(Self::demo_row(vec![
+                components::disabled_button(
+                    "g-disabled",
+                    "不可用",
+                    ButtonTone::Neutral,
+                    ButtonSize::Md,
+                    true,
+                )
+                .into_any_element(),
+                components::busy_button(
+                    "g-busy",
+                    "处理中",
+                    ButtonTone::Neutral,
+                    ButtonSize::Md,
+                    false,
+                )
+                .into_any_element(),
+            ]));
+
+        let console_columns = [
+            Column::flex("应用 / Application", 120., 1.),
+            Column::flex("连接 / 接続", 180., 2.),
+            Column::fixed("状态", 96.),
+        ];
+        let console_table = components::card().p_0().child(
+            div()
+                .id("gallery-column-scroll")
+                .w_full()
+                .overflow_x_scroll()
+                .child(
+                    table::frame("gallery-console-table", &console_columns)
+                        .child(table::header("gallery-console-header", &console_columns))
+                        .child(table::row(
+                            "gallery-console-row",
+                            &console_columns,
+                            vec![
+                                div().child("Claude Code").into_any_element(),
+                                div()
+                                    .min_w_0()
+                                    .truncate()
+                                    .child("团队主连接 · チーム接続 · Production")
+                                    .into_any_element(),
+                                div()
+                                    .text_color(theme::subtext())
+                                    .child("已配置")
+                                    .into_any_element(),
+                            ],
+                            true,
+                        )),
+                ),
+        );
+        let console_navigation = components::card()
+            .p_2()
+            .child(navigation::item(
+                "gallery-overview",
+                "总览 / Overview",
+                IconName::Layers,
+                true,
+            ))
+            .child(navigation::item(
+                "gallery-connections",
+                "连接 / Connections",
+                IconName::Cloud,
+                false,
             ));
+        let notice_demo = components::card()
+            .gap_3()
+            .child(
+                div()
+                    .text_role(TextRole::Body)
+                    .text_color(theme::subtext())
+                    .child("浮层保持简短，完整诊断保留在本次启动的通知中心。"),
+            )
+            .child(Self::demo_row(vec![
+                components::button(
+                    "gallery-notice-success",
+                    "简短结果",
+                    ButtonTone::Neutral,
+                    ButtonSize::Md,
+                )
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.notifications.update(cx, |host, cx| {
+                        host.notify(
+                            NotificationRequest::new(NotificationLevel::Success, "演示草稿已保存")
+                                .summary("这是组件演示，没有写入目标应用。")
+                                .source("本机 · 组件画廊")
+                                .key("gallery:save"),
+                            cx,
+                        );
+                    });
+                }))
+                .into_any_element(),
+                components::button(
+                    "gallery-notice-error",
+                    "长诊断详情",
+                    ButtonTone::Neutral,
+                    ButtonSize::Md,
+                )
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.notifications.update(cx, |host, cx| {
+                        host.notify(
+                            NotificationRequest::new(NotificationLevel::Error, "演示配置未写入")
+                                .summary("诊断内容保留在通知中心。")
+                                .details(format!(
+                                    "/synthetic/example/{}\n{}",
+                                    "long-path-".repeat(25),
+                                    "保留完整说明 · 詳細を保持 · Full diagnostic detail.\n"
+                                        .repeat(25)
+                                ))
+                                .source("组件画廊 · 虚构数据")
+                                .key("gallery:diagnostic"),
+                            cx,
+                        );
+                    });
+                }))
+                .into_any_element(),
+                components::button(
+                    "gallery-notice-center",
+                    "通知中心",
+                    ButtonTone::Ghost,
+                    ButtonSize::Md,
+                )
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.notifications
+                        .update(cx, |host, cx| host.toggle_center(cx))
+                }))
+                .into_any_element(),
+            ]));
 
         let segmented_demo = components::card()
             .gap_3()
@@ -326,39 +470,37 @@ impl gpui::Render for GalleryView {
             .gap_2()
             .child(
                 div()
-                    .text_xl()
-                    .font_weight(FontWeight::BOLD)
+                    .text_role(TextRole::PageTitle)
                     .text_color(theme::text())
-                    .child("Display 页面大标题 (xl)"),
+                    .child("Page title · 页面标题 · 24 / 30"),
             )
             .child(
                 div()
-                    .text_lg()
-                    .font_weight(FontWeight::BOLD)
+                    .text_role(TextRole::SectionTitle)
                     .text_color(theme::text())
-                    .child("Title 页面标题 (lg)"),
+                    .child("Section title · 区块标题 · 15 / 22"),
             )
             .child(
                 div()
-                    .text_sm()
-                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_role(TextRole::Control)
                     .text_color(theme::text())
-                    .child("Heading 区块标题 (sm/semibold)"),
+                    .child("Control · 输入文字 · 14 / 20"),
             )
             .child(
                 div()
-                    .text_sm()
+                    .text_role(TextRole::Body)
                     .text_color(theme::text())
-                    .child("Body 正文与行标签 (sm) — 用于大多数内容。"),
+                    .child("Body · 正文 · 本文 · 13 / 20"),
             )
             .child(
                 div()
-                    .text_xs()
+                    .text_role(TextRole::Caption)
                     .text_color(theme::muted())
-                    .child("Caption 说明文字 (xs) — 用于帮助文本、表头与徽章。"),
+                    .child("Caption · 辅助文字 · 補足 · 12 / 18"),
             );
 
         layout::page()
+            .relative()
             .child(layout::page_header(
                 "组件画廊",
                 Some(SharedString::from("MS_GALLERY=1 · 共享组件全状态预览")),
@@ -367,6 +509,16 @@ impl gpui::Render for GalleryView {
                 "gallery-scroll",
                 &self.scroll_handle,
                 layout::content_column()
+                    .child(Self::section(
+                        "控制台导航",
+                        "选中 / 未选中，业务状态由宿主拥有",
+                        console_navigation,
+                    ))
+                    .child(Self::section(
+                        "通知",
+                        "短结果 / 长详情 / 键盘 / 本次启动",
+                        notice_demo,
+                    ))
                     .child(Self::section("按钮", "tone × size,统一悬停与字重", buttons))
                     .child(Self::section(
                         "表单字段",
@@ -405,6 +557,11 @@ impl gpui::Render for GalleryView {
                         div().child(stats),
                     ))
                     .child(Self::section("表格", "table_header + table_row", table))
+                    .child(Self::section(
+                        "数据列",
+                        "标题与行共享固定 / 弹性列宽",
+                        console_table,
+                    ))
                     .child(Self::section("分页", "pagination 页脚条", pagination))
                     .child(Self::section(
                         "字体阶梯",
@@ -412,5 +569,6 @@ impl gpui::Render for GalleryView {
                         type_ramp,
                     )),
             ))
+            .child(self.notifications.clone())
     }
 }

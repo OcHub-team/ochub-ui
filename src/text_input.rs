@@ -2057,13 +2057,20 @@ impl Render for TextInput {
                 theme::border()
             })
             .text_color(theme::text())
-            .text_sm()
-            .line_height(px(20.))
+            .text_size(px(crate::tokens::TextRole::Control.metrics().0))
+            .line_height(px(crate::tokens::TextRole::Control.metrics().1))
             .when(self.search_field || self.compact, |element| {
-                element.px_2().py_1()
+                element.px_2().py(px(3.))
             })
             .when(!self.search_field && !self.compact, |element| {
-                element.px_3().py_2()
+                element.px_3().py(px(5.))
+            })
+            .when(!self.multiline && !self.code, |element| {
+                element.h(px(if self.search_field || self.compact {
+                    crate::tokens::control::COMPACT
+                } else {
+                    crate::tokens::control::DEFAULT
+                }))
             });
         if self.code {
             base.font_family(crate::assets::monospace_font_family())
@@ -2497,6 +2504,27 @@ mod tests {
                 "ctrl"
             }
         )
+    }
+
+    #[gpui::test]
+    fn console_input_sizes_keep_a_full_line_box_for_cjk_and_latin(cx: &mut TestAppContext) {
+        for compact in [false, true] {
+            let (input, window_cx) = cx.add_window_view(|_, cx| {
+                let input = TextInput::new(cx, "").with_content("中文输入 · 日本語 · Latin gjpq");
+                if compact { input.compact() } else { input }
+            });
+            window_cx.update(|window, _| window.activate_window());
+            input.read_with(window_cx, |input, _| {
+                let bounds = input.last_bounds.expect("text was laid out");
+                assert!(bounds.size.height >= px(20.), "{bounds:?}");
+                assert!(
+                    input
+                        .last_layout
+                        .as_ref()
+                        .is_some_and(|line| line.width > px(0.))
+                );
+            });
+        }
     }
 
     #[gpui::test]

@@ -19,10 +19,13 @@ pub mod icons;
 pub mod keyboard;
 pub mod layout;
 pub mod modal;
+pub mod navigation;
 pub mod notifications;
 pub mod scrollbar;
+pub mod table;
 pub mod text_input;
 pub mod theme;
+pub mod tokens;
 pub mod window_chrome;
 
 // Consumers should use these re-exports when they need to implement a custom
