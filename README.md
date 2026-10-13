@@ -43,7 +43,7 @@ an application bundle.
 
 ## Shared input and shortcuts
 
-The coordinated 0.7.0 development snapshot uses Rust 1.98.1 and the GPUI fork
+The coordinated 0.8.0 development snapshot uses Rust 1.98.1 and the GPUI fork
 listed in `COMPATIBILITY.md`. Applications must pin the same tested Git commit;
 this snapshot does not imply that a release tag has been published.
 
