@@ -1260,26 +1260,36 @@ impl TextInput {
         self.select_to(self.content.len(), cx);
     }
 
+    fn word_left_offset(&self) -> usize {
+        if self.masked {
+            0
+        } else {
+            previous_word_boundary(&self.content, self.cursor_offset())
+        }
+    }
+
+    fn word_right_offset(&self) -> usize {
+        if self.masked {
+            self.content.len()
+        } else {
+            next_word_boundary(&self.content, self.cursor_offset())
+        }
+    }
+
     fn word_left(&mut self, _: &WordLeft, _: &mut Window, cx: &mut Context<Self>) {
-        self.move_to(
-            previous_word_boundary(&self.content, self.cursor_offset()),
-            cx,
-        );
+        self.move_to(self.word_left_offset(), cx);
     }
 
     fn word_right(&mut self, _: &WordRight, _: &mut Window, cx: &mut Context<Self>) {
-        self.move_to(next_word_boundary(&self.content, self.cursor_offset()), cx);
+        self.move_to(self.word_right_offset(), cx);
     }
 
     fn select_word_left(&mut self, _: &SelectWordLeft, _: &mut Window, cx: &mut Context<Self>) {
-        self.select_to(
-            previous_word_boundary(&self.content, self.cursor_offset()),
-            cx,
-        );
+        self.select_to(self.word_left_offset(), cx);
     }
 
     fn select_word_right(&mut self, _: &SelectWordRight, _: &mut Window, cx: &mut Context<Self>) {
-        self.select_to(next_word_boundary(&self.content, self.cursor_offset()), cx);
+        self.select_to(self.word_right_offset(), cx);
     }
 
     fn delete_to(
@@ -1311,12 +1321,7 @@ impl TextInput {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.delete_to(
-            previous_word_boundary(&self.content, self.cursor_offset()),
-            false,
-            window,
-            cx,
-        );
+        self.delete_to(self.word_left_offset(), false, window, cx);
     }
 
     fn delete_word_right(
@@ -1325,12 +1330,7 @@ impl TextInput {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.delete_to(
-            next_word_boundary(&self.content, self.cursor_offset()),
-            false,
-            window,
-            cx,
-        );
+        self.delete_to(self.word_right_offset(), false, window, cx);
     }
 
     fn delete_to_beginning_of_line(

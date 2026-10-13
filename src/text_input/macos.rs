@@ -345,4 +345,26 @@ mod tests {
             );
         });
     }
+
+    #[gpui::test]
+    fn masked_word_commands_treat_the_value_as_one_concealed_unit(cx: &mut TestAppContext) {
+        cx.update(init);
+        let (input, cx) = cx.add_window_view(|window, cx| {
+            let input = TextInput::new(cx, "secret")
+                .masked(true)
+                .with_content("one two-three");
+            input.focus_handle.focus(window, cx);
+            input
+        });
+        cx.simulate_keystrokes("alt-left");
+        input.read_with(cx, |input, _| assert_eq!(input.selected_range, 0..0));
+        cx.simulate_keystrokes("alt-shift-right");
+        input.read_with(cx, |input, _| assert_eq!(input.selected_range, 0..13));
+        cx.simulate_keystrokes("right alt-backspace");
+        input.read_with(cx, |input, _| assert!(input.content.is_empty()));
+        cx.simulate_keystrokes("cmd-z");
+        input.read_with(cx, |input, _| {
+            assert_eq!(input.content.as_ref(), "one two-three")
+        });
+    }
 }
