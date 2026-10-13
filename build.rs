@@ -26,7 +26,9 @@ const LOCALES: &[(&str, &str)] = &[("zh-Hans", "ZH"), ("en", "EN"), ("ja", "JA")
 const REFERENCE: &str = "zh-Hans";
 
 fn main() {
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("i18n");
+    let dir =
+        PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("Cargo sets CARGO_MANIFEST_DIR"))
+            .join("i18n");
     println!("cargo:rerun-if-changed={}", dir.display());
 
     let catalogs: BTreeMap<&str, BTreeMap<String, String>> = LOCALES
@@ -127,7 +129,9 @@ fn main() {
 }
 
 fn generate_embedded_assets() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets");
+    let root =
+        PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("Cargo sets CARGO_MANIFEST_DIR"))
+            .join("assets");
     println!("cargo:rerun-if-changed={}", root.display());
 
     let mut assets = Vec::new();

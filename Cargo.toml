@@ -1,8 +1,8 @@
 [package]
 name = "ochub-ui"
-version = "0.6.2"
+version = "0.7.0"
 edition = "2024"
-rust-version = "1.97.0"
+rust-version = "1.98.1"
 license = "MIT OR Apache-2.0"
 authors = ["OcHub contributors"]
 repository = "https://github.com/OcHub-team/ochub-ui"
@@ -14,7 +14,7 @@ categories = ["gui"]
 [dependencies]
 anyhow = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
-gpui = { git = "https://github.com/zed-industries/zed", package = "gpui", rev = "a8fafdd7ee36fb3fb98ebbfe5d3be983301d9e74" }
+gpui = { git = "https://github.com/OcHub-team/zed", package = "gpui", rev = "ba106c57655d87fec8d6fc0a3ab4f9e6a4e9c23b" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 similar = { version = "2.7", default-features = false, features = ["text"] }
@@ -22,20 +22,20 @@ tempfile = "3"
 unicode-segmentation = "1"
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-zed-text = { git = "https://github.com/zed-industries/zed", package = "text", rev = "a8fafdd7ee36fb3fb98ebbfe5d3be983301d9e74" }
+zed-text = { git = "https://github.com/OcHub-team/zed", package = "text", rev = "ba106c57655d87fec8d6fc0a3ab4f9e6a4e9c23b" }
 
 [target.'cfg(target_family = "wasm")'.dev-dependencies]
-gpui_platform = { git = "https://github.com/zed-industries/zed", package = "gpui_platform", rev = "a8fafdd7ee36fb3fb98ebbfe5d3be983301d9e74" }
+gpui_platform = { git = "https://github.com/OcHub-team/zed", package = "gpui_platform", rev = "ba106c57655d87fec8d6fc0a3ab4f9e6a4e9c23b" }
 wasm-bindgen = "0.2"
 
 [target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
-gpui = { git = "https://github.com/zed-industries/zed", package = "gpui", rev = "a8fafdd7ee36fb3fb98ebbfe5d3be983301d9e74", features = ["test-support"] }
+gpui = { git = "https://github.com/OcHub-team/zed", package = "gpui", rev = "ba106c57655d87fec8d6fc0a3ab4f9e6a4e9c23b", features = ["test-support"] }
 
 [build-dependencies]
 toml = "1.1"
 
 [dev-dependencies]
-gpui_platform = { git = "https://github.com/zed-industries/zed", package = "gpui_platform", rev = "a8fafdd7ee36fb3fb98ebbfe5d3be983301d9e74", features = ["font-kit", "runtime_shaders", "wayland", "x11"] }
+gpui_platform = { git = "https://github.com/OcHub-team/zed", package = "gpui_platform", rev = "ba106c57655d87fec8d6fc0a3ab4f9e6a4e9c23b", features = ["font-kit", "runtime_shaders", "wayland", "x11"] }
 
 [patch.crates-io]
 async-process = { git = "https://github.com/zed-industries/async-process.git", rev = "0b6d6713570af61806e1e5cb40e0f757cb93fd9d" }

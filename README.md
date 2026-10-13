@@ -1,6 +1,6 @@
 # ochub-ui
 
-`ochub-ui` is an independently versioned GPUI component library used by OcHub.
+`ochub-ui` is an independently versioned GPUI component library used by OcHub and OcHerdr.
 It contains reusable theme primitives, layouts, controls, text and code
 editors, charts, notifications, window chrome, and embedded assets.
 
@@ -40,6 +40,23 @@ Host applications should delegate unknown asset requests to
 `ochub_ui::assets::load` and merge `ochub_ui::assets::list` into their asset
 source. The icons are embedded in the library and do not need to be copied into
 an application bundle.
+
+## Shared input and shortcuts
+
+The coordinated 0.7.0 development snapshot uses Rust 1.98.1 and the GPUI fork
+listed in `COMPATIBILITY.md`. Applications must pin the same tested Git commit;
+this snapshot does not imply that a release tag has been published.
+
+`text_input::init` is idempotent. `TextInput` owns native editing, selection,
+IME protection, undo, Find, and macOS plain-text paste and transpose. Hosts that
+route raw keys into terminals can call `text_input::dispatch_focused_editing_key`
+first; it only acts on the focused field and retains weak input references.
+
+`shortcuts::Shortcut` supplies one platform binding for action registration,
+raw matching, and help labels. Application commands stay in the host.
+`KeyReleaseTracker` pairs consumed key-downs with the correct releases;
+`ShortcutReveal` respects reduced motion when revealing reserved-space hints.
+`help_row` presents readable, accessible shortcut references.
 
 ## Development
 

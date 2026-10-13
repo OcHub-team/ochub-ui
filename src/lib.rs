@@ -23,6 +23,7 @@ pub mod navigation;
 pub mod notifications;
 pub mod scrollbar;
 pub mod select;
+pub mod shortcuts;
 pub mod table;
 pub mod text_input;
 pub mod theme;

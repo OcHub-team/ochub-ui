@@ -1,6 +1,5 @@
 [toolchain]
-# Keep local and CI builds reproducible. The crate's declared minimum remains
-# `rust-version = 1.97.0`; patch releases are expected to be compatible.
-channel = "1.97.1"
+# Shared with OcHub and OcHerdr, matching the pinned GPUI fork.
+channel = "1.98.1"
 profile = "minimal"
 components = ["rustfmt", "clippy"]

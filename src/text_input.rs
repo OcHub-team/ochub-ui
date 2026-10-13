@@ -6,6 +6,54 @@
 //! render the entity as a child, and read/write text via [`TextInput::content`]
 //! / [`TextInput::set_content`].
 
+#[cfg(target_os = "macos")]
+mod macos;
+
+#[derive(Default)]
+struct InputBindings {
+    #[cfg(target_os = "macos")]
+    inputs: Vec<gpui::WeakEntity<TextInput>>,
+}
+impl gpui::Global for InputBindings {}
+
+/// Idempotent compatibility entry point for applications with raw key routing.
+pub fn init(cx: &mut App) {
+    bind_keys(cx);
+}
+
+/// Give a focused text field its native editing keys before a host routes keys
+/// to a terminal or canvas. Returns false when there is no matching field/key.
+/// Only weak references are retained, including dynamically-created Find fields.
+pub fn dispatch_focused_editing_key(
+    event: &gpui::KeyDownEvent,
+    window: &mut Window,
+    cx: &mut App,
+) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        if !TextInput::is_macos_editing_key(event) || !cx.has_global::<InputBindings>() {
+            return false;
+        }
+        let registry = cx.global_mut::<InputBindings>();
+        registry.inputs.retain(|input| input.is_upgradable());
+        let inputs: Vec<_> = registry
+            .inputs
+            .iter()
+            .filter_map(gpui::WeakEntity::upgrade)
+            .collect();
+        for input in inputs {
+            if input.read(cx).focus_handle.is_focused(window) {
+                return input.update(cx, |input, cx| {
+                    input.handle_macos_editing_key(event, window, cx)
+                });
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (event, window, cx);
+    false
+}
+
 use std::ops::Range;
 use std::rc::Rc;
 use std::time::Duration;
@@ -84,6 +132,16 @@ impl gpui::Global for KillBuffer {}
 
 /// Register the text-input key bindings. Call once from `main.rs`.
 pub fn bind_keys(cx: &mut App) {
+    if cx.has_global::<InputBindings>() {
+        return;
+    }
+    cx.set_global(InputBindings::default());
+    #[cfg(target_os = "macos")]
+    cx.observe_new::<TextInput>(|_, _, cx| {
+        let input = cx.entity().downgrade();
+        cx.global_mut::<InputBindings>().inputs.push(input);
+    })
+    .detach();
     cx.bind_keys([
         gpui::KeyBinding::new("backspace", Backspace, INPUT_CONTEXT),
         gpui::KeyBinding::new("delete", Delete, INPUT_CONTEXT),
@@ -112,6 +170,7 @@ pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
         gpui::KeyBinding::new("cmd-a", SelectAll, INPUT_CONTEXT),
         gpui::KeyBinding::new("cmd-v", Paste, INPUT_CONTEXT),
+        gpui::KeyBinding::new("cmd-shift-v", Paste, INPUT_CONTEXT),
         gpui::KeyBinding::new("cmd-c", Copy, INPUT_CONTEXT),
         gpui::KeyBinding::new("cmd-x", Cut, INPUT_CONTEXT),
         gpui::KeyBinding::new("cmd-z", Undo, INPUT_CONTEXT),
@@ -1950,6 +2009,18 @@ impl Element for TextElement {
     }
 }
 
+// Platform text services own an active preedit. Bound editing actions must
+// obey the same guard as raw terminal-host dispatch.
+fn when_not_composing<A>(
+    edit: fn(&mut TextInput, &A, &mut Window, &mut Context<TextInput>),
+) -> impl Fn(&mut TextInput, &A, &mut Window, &mut Context<TextInput>) {
+    move |input, action, window, cx| {
+        if input.marked_range.is_none() {
+            edit(input, action, window, cx);
+        }
+    }
+}
+
 impl Render for TextInput {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let focused = self.focus_handle.is_focused(window);
@@ -1977,42 +2048,42 @@ impl Render for TextInput {
             })
             .track_focus(&self.focus_handle(cx))
             .cursor(CursorStyle::IBeam)
-            .on_action(cx.listener(Self::backspace))
-            .on_action(cx.listener(Self::delete))
-            .on_action(cx.listener(Self::left))
-            .on_action(cx.listener(Self::right))
-            .on_action(cx.listener(Self::up))
-            .on_action(cx.listener(Self::down))
-            .on_action(cx.listener(Self::select_left))
-            .on_action(cx.listener(Self::select_right))
-            .on_action(cx.listener(Self::select_up))
-            .on_action(cx.listener(Self::select_down))
-            .on_action(cx.listener(Self::word_left))
-            .on_action(cx.listener(Self::word_right))
-            .on_action(cx.listener(Self::select_word_left))
-            .on_action(cx.listener(Self::select_word_right))
-            .on_action(cx.listener(Self::select_home))
-            .on_action(cx.listener(Self::select_end))
-            .on_action(cx.listener(Self::document_start))
-            .on_action(cx.listener(Self::document_end))
-            .on_action(cx.listener(Self::select_document_start))
-            .on_action(cx.listener(Self::select_document_end))
-            .on_action(cx.listener(Self::delete_word_left))
-            .on_action(cx.listener(Self::delete_word_right))
-            .on_action(cx.listener(Self::delete_to_beginning_of_line))
-            .on_action(cx.listener(Self::delete_to_end_of_line))
-            .on_action(cx.listener(Self::kill_to_end_of_line))
-            .on_action(cx.listener(Self::yank))
-            .on_action(cx.listener(Self::select_all))
-            .on_action(cx.listener(Self::home))
-            .on_action(cx.listener(Self::end))
+            .on_action(cx.listener(when_not_composing(Self::backspace)))
+            .on_action(cx.listener(when_not_composing(Self::delete)))
+            .on_action(cx.listener(when_not_composing(Self::left)))
+            .on_action(cx.listener(when_not_composing(Self::right)))
+            .on_action(cx.listener(when_not_composing(Self::up)))
+            .on_action(cx.listener(when_not_composing(Self::down)))
+            .on_action(cx.listener(when_not_composing(Self::select_left)))
+            .on_action(cx.listener(when_not_composing(Self::select_right)))
+            .on_action(cx.listener(when_not_composing(Self::select_up)))
+            .on_action(cx.listener(when_not_composing(Self::select_down)))
+            .on_action(cx.listener(when_not_composing(Self::word_left)))
+            .on_action(cx.listener(when_not_composing(Self::word_right)))
+            .on_action(cx.listener(when_not_composing(Self::select_word_left)))
+            .on_action(cx.listener(when_not_composing(Self::select_word_right)))
+            .on_action(cx.listener(when_not_composing(Self::select_home)))
+            .on_action(cx.listener(when_not_composing(Self::select_end)))
+            .on_action(cx.listener(when_not_composing(Self::document_start)))
+            .on_action(cx.listener(when_not_composing(Self::document_end)))
+            .on_action(cx.listener(when_not_composing(Self::select_document_start)))
+            .on_action(cx.listener(when_not_composing(Self::select_document_end)))
+            .on_action(cx.listener(when_not_composing(Self::delete_word_left)))
+            .on_action(cx.listener(when_not_composing(Self::delete_word_right)))
+            .on_action(cx.listener(when_not_composing(Self::delete_to_beginning_of_line)))
+            .on_action(cx.listener(when_not_composing(Self::delete_to_end_of_line)))
+            .on_action(cx.listener(when_not_composing(Self::kill_to_end_of_line)))
+            .on_action(cx.listener(when_not_composing(Self::yank)))
+            .on_action(cx.listener(when_not_composing(Self::select_all)))
+            .on_action(cx.listener(when_not_composing(Self::home)))
+            .on_action(cx.listener(when_not_composing(Self::end)))
             .on_action(cx.listener(Self::newline))
             .on_action(cx.listener(Self::show_character_palette))
             .on_action(cx.listener(Self::paste))
             .on_action(cx.listener(Self::cut))
             .on_action(cx.listener(Self::copy))
-            .on_action(cx.listener(Self::undo))
-            .on_action(cx.listener(Self::redo))
+            .on_action(cx.listener(when_not_composing(Self::undo)))
+            .on_action(cx.listener(when_not_composing(Self::redo)))
             .when(
                 (self.multiline || self.code) && !self.search_field,
                 |element| {
@@ -2072,6 +2143,12 @@ impl Render for TextInput {
                     crate::tokens::control::DEFAULT
                 }))
             });
+        #[cfg(target_os = "macos")]
+        let base = base.on_key_down(cx.listener(|this, event, window, cx| {
+            if this.handle_macos_editing_key(event, window, cx) {
+                cx.stop_propagation();
+            }
+        }));
         if self.code {
             base.font_family(crate::assets::monospace_font_family())
                 .relative()
