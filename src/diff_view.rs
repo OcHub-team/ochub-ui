@@ -251,7 +251,7 @@ fn render_cell(row: &DiffRow, is_old: bool) -> Div {
             .flex_1()
             .min_w_0()
             .pr_2()
-            .font_family("Menlo")
+            .font_family(crate::assets::monospace_font_family())
             .text_xs()
             .text_color(theme::text())
             .child(SharedString::from(cell.text.clone())),

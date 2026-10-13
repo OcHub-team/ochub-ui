@@ -1219,7 +1219,29 @@ fn opacity_alpha(percent: u8) -> f32 {
 /// Native window treatment for the currently installed palette.
 #[inline]
 pub fn window_background_appearance() -> WindowBackgroundAppearance {
-    current().effects.window_background.appearance()
+    effective_window_background(current().effects.window_background).appearance()
+}
+
+fn background_with_blur_support(
+    requested: ThemeWindowBackground,
+    native_blur: bool,
+) -> ThemeWindowBackground {
+    match requested {
+        ThemeWindowBackground::Blurred if !native_blur => ThemeWindowBackground::Opaque,
+        _ => requested,
+    }
+}
+
+fn effective_window_background(requested: ThemeWindowBackground) -> ThemeWindowBackground {
+    // GPUI's X11 backend treats Blurred as transparency. Wayland only blurs
+    // when the optional KDE blur protocol exists, and exposes no capability
+    // query to applications. Use an opaque fallback on these hosts instead of
+    // making the default sidebar reveal sharp desktop text through a 40% tint.
+    // Explicit Transparent themes still mean transparency on every platform.
+    background_with_blur_support(
+        requested,
+        !cfg!(any(target_os = "linux", target_os = "freebsd")),
+    )
 }
 
 /// Keep the native window in sync after installing or previewing a palette.
@@ -1235,7 +1257,7 @@ pub fn apply_window_background(window: &Window) {
 pub fn window_base_background() -> Rgba {
     let palette = current();
     let background = palette.bg.rgba();
-    match palette.effects.window_background {
+    match effective_window_background(palette.effects.window_background) {
         ThemeWindowBackground::Blurred | ThemeWindowBackground::Transparent => background.alpha(0.),
         ThemeWindowBackground::Opaque => background,
     }
@@ -1279,17 +1301,38 @@ fn adaptive_sidebar_foreground(
     appearance: WindowAppearance,
     minimum_contrast: f32,
 ) -> ThemeColor {
+    sidebar_foreground_for_background(
+        palette,
+        preferred,
+        fallback,
+        appearance,
+        minimum_contrast,
+        effective_window_background(palette.effects.window_background),
+    )
+}
+
+fn sidebar_foreground_for_background(
+    palette: &Theme,
+    preferred: ThemeColor,
+    fallback: ThemeColor,
+    appearance: WindowAppearance,
+    minimum_contrast: f32,
+    background: ThemeWindowBackground,
+) -> ThemeColor {
     let backdrops = if system_is_dark(appearance) {
         [ThemeColor::new(0x111111), ThemeColor::new(0xf7f7f7)]
     } else {
         [ThemeColor::new(0xf7f7f7), ThemeColor::new(0x111111)]
     };
-    let alpha = if palette.effects.window_background == ThemeWindowBackground::Opaque {
-        1.
+    let alpha = opacity_alpha(palette.effects.sidebar_opacity);
+    let backgrounds = if background == ThemeWindowBackground::Opaque {
+        // The tint is composited over the opaque root, including when blur is
+        // unavailable. Contrast must use that actual surface, not the desktop
+        // or an incorrectly assumed fully opaque sidebar tint.
+        [composite_color(palette.mantle, palette.bg, alpha); 2]
     } else {
-        opacity_alpha(palette.effects.sidebar_opacity)
+        backdrops.map(|backdrop| composite_color(palette.mantle, backdrop, alpha))
     };
-    let backgrounds = backdrops.map(|backdrop| composite_color(palette.mantle, backdrop, alpha));
     let minimum_ratio = |foreground| {
         backgrounds
             .iter()
@@ -1480,24 +1523,49 @@ mod tests {
     }
 
     #[test]
+    fn blur_falls_back_to_opaque_when_backend_cannot_guarantee_it() {
+        assert_eq!(
+            background_with_blur_support(ThemeWindowBackground::Blurred, false),
+            ThemeWindowBackground::Opaque
+        );
+        assert_eq!(
+            background_with_blur_support(ThemeWindowBackground::Blurred, true),
+            ThemeWindowBackground::Blurred
+        );
+        for native_blur in [false, true] {
+            for requested in [
+                ThemeWindowBackground::Opaque,
+                ThemeWindowBackground::Transparent,
+            ] {
+                assert_eq!(
+                    background_with_blur_support(requested, native_blur),
+                    requested
+                );
+            }
+        }
+    }
+
+    #[test]
     fn glass_sidebar_foreground_stays_readable_across_backdrops() {
         let mut palette = OCHUB_DARK;
         palette.effects.window_background = ThemeWindowBackground::Blurred;
         palette.effects.sidebar_opacity = MIN_SURFACE_OPACITY_PERCENT;
 
-        let dark = adaptive_sidebar_foreground(
+        let dark = sidebar_foreground_for_background(
             &palette,
             palette.sidebar_text,
             palette.text,
             WindowAppearance::Dark,
             4.5,
+            ThemeWindowBackground::Blurred,
         );
-        let light = adaptive_sidebar_foreground(
+        let light = sidebar_foreground_for_background(
             &palette,
             palette.sidebar_text,
             palette.text,
             WindowAppearance::Light,
             4.5,
+            ThemeWindowBackground::Blurred,
         );
 
         assert_eq!(dark, light);
@@ -1521,6 +1589,27 @@ mod tests {
 
         assert_ne!(foreground, palette.sidebar_text);
         assert!(contrast_ratio(foreground, palette.mantle) >= 4.5);
+    }
+
+    #[test]
+    fn opaque_sidebar_contrast_uses_the_root_under_a_transparent_tint() {
+        let mut palette = OCHUB_LIGHT;
+        palette.effects.sidebar_opacity = 0;
+        palette.bg = ThemeColor::new(0x000000);
+        palette.mantle = ThemeColor::new(0xffffff);
+        palette.sidebar_text = ThemeColor::new(0x000000);
+
+        for appearance in [WindowAppearance::Dark, WindowAppearance::Light] {
+            let foreground = sidebar_foreground_for_background(
+                &palette,
+                palette.sidebar_text,
+                palette.text,
+                appearance,
+                4.5,
+                ThemeWindowBackground::Opaque,
+            );
+            assert!(contrast_ratio(foreground, palette.bg) >= 4.5);
+        }
     }
 
     #[test]

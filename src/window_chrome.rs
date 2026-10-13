@@ -42,6 +42,66 @@ use std::rc::Rc;
 
 use gpui::{AnyElement, App, Window};
 
+/// Height of the client title bar, in logical pixels. Page layout must subtract
+/// this only when a strip is actually drawn; a Linux server title bar sits
+/// outside GPUI's content viewport.
+pub const TITLE_BAR_HEIGHT: f32 = 32.;
+
+#[derive(Clone, Copy)]
+enum ChromePlatform {
+    MacOs,
+    Windows,
+    Unix,
+    Other,
+}
+
+impl ChromePlatform {
+    const fn current() -> Self {
+        if cfg!(target_os = "macos") {
+            Self::MacOs
+        } else if cfg!(target_os = "windows") {
+            Self::Windows
+        } else if cfg!(any(target_os = "linux", target_os = "freebsd")) {
+            Self::Unix
+        } else {
+            Self::Other
+        }
+    }
+}
+
+const fn title_bar_height_for(platform: ChromePlatform, client_decorated: bool) -> f32 {
+    match platform {
+        ChromePlatform::Windows => TITLE_BAR_HEIGHT,
+        ChromePlatform::Unix if client_decorated => TITLE_BAR_HEIGHT,
+        _ => 0.,
+    }
+}
+
+pub fn title_bar_height(window: &Window) -> gpui::Pixels {
+    gpui::px(title_bar_height_for(
+        ChromePlatform::current(),
+        matches!(
+            window.window_decorations(),
+            gpui::Decorations::Client { .. }
+        ),
+    ))
+}
+
+/// Only macOS reserves room for traffic lights inside the navigation rail.
+pub const fn sidebar_top_inset() -> f32 {
+    if cfg!(target_os = "macos") { 44. } else { 8. }
+}
+
+fn caption_label(button: gpui::WindowButton, maximized: bool) -> gpui::SharedString {
+    use crate::i18n::{k, t};
+    t(match button {
+        gpui::WindowButton::Minimize => k::COMMON_WINDOW_MINIMIZE,
+        gpui::WindowButton::Maximize if maximized => k::COMMON_WINDOW_RESTORE,
+        gpui::WindowButton::Maximize => k::COMMON_WINDOW_MAXIMIZE,
+        gpui::WindowButton::Close => k::COMMON_WINDOW_CLOSE,
+    })
+}
+
 /// Host callback used when a client-side close button is activated.
 pub type CloseWindowHandler = Rc<dyn Fn(&mut App)>;
 
@@ -52,6 +112,9 @@ pub fn title_bar(
     cx: &mut App,
     close_window: CloseWindowHandler,
 ) -> Option<AnyElement> {
+    // Refer to the cross-platform labels even on hosts with native controls;
+    // generated catalogs intentionally reject keys which are never used.
+    let _ = caption_label;
     #[cfg(target_os = "windows")]
     {
         use gpui::IntoElement as _;
@@ -64,10 +127,7 @@ pub fn title_bar(
         // A server-decorated window (X11, or Wayland under a compositor that
         // supports SSD) already has a real title bar; drawing a second one
         // inside the content would just duplicate it.
-        if !matches!(
-            window.window_decorations(),
-            gpui::Decorations::Client { .. }
-        ) {
+        if title_bar_height(window) == gpui::px(0.) {
             return None;
         }
         return Some(linux_chrome::title_bar(window, cx, close_window).into_any_element());
@@ -79,8 +139,13 @@ pub fn title_bar(
 
 /// Shared metric, so the two implementations at least agree on the strip's
 /// height even though they agree on nothing else.
-#[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
-const BAR_HEIGHT: f32 = 32.;
+#[cfg(any(
+    target_os = "windows",
+    target_os = "linux",
+    target_os = "freebsd",
+    test
+))]
+const BAR_HEIGHT: f32 = TITLE_BAR_HEIGHT;
 
 #[cfg(target_os = "windows")]
 mod windows_chrome {
@@ -192,7 +257,7 @@ mod windows_chrome {
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+#[cfg(any(target_os = "linux", target_os = "freebsd", test))]
 mod linux_chrome {
     use gpui::{
         App, MAX_BUTTONS_PER_SIDE, MouseButton, SharedString, Window, WindowButton,
@@ -275,8 +340,12 @@ mod linux_chrome {
                     .id("window-title-bar-drag")
                     .flex_1()
                     .h_full()
-                    .on_mouse_down(MouseButton::Left, |_event, window, _cx| {
-                        window.start_window_move()
+                    .on_mouse_down(MouseButton::Left, |event, window, _cx| {
+                        if event.click_count == 2 && window.window_controls().maximize {
+                            window.zoom_window();
+                        } else {
+                            window.start_window_move();
+                        }
                     }),
             )
             .child(side(layout.right, "window-controls-right"))
@@ -294,9 +363,10 @@ mod linux_chrome {
             WindowButton::Close => IconName::Close,
         };
         let group = SharedString::new_static(button.id());
-        div()
-            .id(button.id())
+        crate::keyboard::interactive(div().id(button.id()))
             .group(group.clone())
+            .role(gpui::Role::Button)
+            .aria_label(super::caption_label(button, maximized))
             .flex()
             .items_center()
             .justify_center()
@@ -324,5 +394,46 @@ mod linux_chrome {
                 icon(name, theme::subtext(), 12.)
                     .group_hover(group, |style| style.text_color(theme::text())),
             )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn title_bar_height_matches_platform_decoration_ownership() {
+        for client_decorated in [false, true] {
+            assert_eq!(
+                title_bar_height_for(ChromePlatform::MacOs, client_decorated),
+                0.
+            );
+            assert_eq!(
+                title_bar_height_for(ChromePlatform::Windows, client_decorated),
+                32.
+            );
+            assert_eq!(
+                title_bar_height_for(ChromePlatform::Other, client_decorated),
+                0.
+            );
+        }
+        assert_eq!(title_bar_height_for(ChromePlatform::Unix, false), 0.);
+        assert_eq!(title_bar_height_for(ChromePlatform::Unix, true), 32.);
+    }
+
+    #[test]
+    fn maximized_caption_uses_restore_label() {
+        use crate::i18n::{k, t};
+        assert_eq!(
+            caption_label(gpui::WindowButton::Maximize, false),
+            t(k::COMMON_WINDOW_MAXIMIZE)
+        );
+        assert_eq!(
+            caption_label(gpui::WindowButton::Maximize, true),
+            t(k::COMMON_WINDOW_RESTORE)
+        );
+        // Render code must type-check on every CI host, including macOS where
+        // the runtime selects native traffic lights instead of this module.
+        let _render = linux_chrome::title_bar;
     }
 }

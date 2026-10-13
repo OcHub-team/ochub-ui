@@ -27,10 +27,14 @@ use zed_text::{Buffer as TextBuffer, BufferId, ReplicaId};
 use crate::fold::{FoldRegion, fold_regions};
 use crate::highlight::{self, Lang};
 use crate::text_input::{
-    Backspace, CaretBlink, CloseFind, Copy, Cut, Delete, Down, End, Find, FindNext, FindPrevious,
-    Home, Left, Newline, Paste, Redo, Right, SelectAll, SelectLeft, SelectRight,
-    ShowCharacterPalette, TextInput, Undo, Up, closest_match, extend_word_selection, find_matches,
-    render_find_bar, surrounding_word_range,
+    Backspace, CaretBlink, CloseFind, Copy, Cut, Delete, DeleteToBeginningOfLine,
+    DeleteToEndOfLine, DeleteWordLeft, DeleteWordRight, DocumentEnd, DocumentStart, Down, End,
+    Find, FindNext, FindPrevious, Home, KillBuffer, KillToEndOfLine, Left, Newline, Paste, Redo,
+    Right, SelectAll, SelectDocumentEnd, SelectDocumentStart, SelectDown, SelectEnd, SelectHome,
+    SelectLeft, SelectRight, SelectUp, SelectWordLeft, SelectWordRight, ShowCharacterPalette,
+    TextInput, Undo, Up, WordLeft, WordRight, Yank, clamped_char_boundary, closest_match,
+    extend_word_selection, find_matches, kill_line_end, line_end, line_start, next_word_boundary,
+    previous_word_boundary, render_find_bar, surrounding_word_range, utf8_offset_from_utf16,
 };
 use crate::theme;
 
@@ -161,7 +165,9 @@ fn make_buffer(text: &str) -> TextBuffer {
 impl CodeEditor {
     pub fn new(cx: &mut Context<Self>, lang: Lang, placeholder: impl Into<SharedString>) -> Self {
         Self {
-            focus_handle: cx.focus_handle(),
+            // track_focus uses this handle's tab-stop flag rather than the
+            // Div's flag, so keyboard traversal must be enabled here too.
+            focus_handle: cx.focus_handle().tab_stop(true),
             buffer: make_buffer(""),
             content: SharedString::default(),
             placeholder: placeholder.into(),
@@ -598,9 +604,8 @@ impl CodeEditor {
     }
 
     fn clamp_selection(&mut self) {
-        let len = self.content.len();
-        let start = self.selected_range.start.min(len);
-        let end = self.selected_range.end.min(len);
+        let start = clamped_char_boundary(&self.content, self.selected_range.start);
+        let end = clamped_char_boundary(&self.content, self.selected_range.end);
         self.selected_range = start..end;
     }
 
@@ -736,45 +741,54 @@ impl CodeEditor {
         self.visible_row_for_line(line)
     }
 
-    /// Move vertically by one *visible* row, keeping the x position.
-    fn move_vertical(&mut self, delta: isize, cx: &mut Context<Self>) {
-        let (_, col) = self.line_index_for_offset(self.cursor_offset());
+    /// Target offset one visible row away, keeping the shaped x position.
+    fn vertical_offset(&self, delta: isize) -> usize {
+        let (line, col) = self.line_index_for_offset(self.cursor_offset());
         let Some(row) = self.cursor_row() else {
-            self.move_to(if delta < 0 { 0 } else { self.content.len() }, cx);
-            return;
+            return if delta < 0 { 0 } else { self.content.len() };
         };
         let target_row = row as isize + delta;
         if target_row < 0 {
-            self.move_to(0, cx);
-            return;
+            return 0;
         }
         let Some(target_line) = self.line_for_visible_row(target_row as usize) else {
-            self.move_to(self.content.len(), cx);
-            return;
+            return self.content.len();
         };
-        let painted_row = row.checked_sub(self.painted_row_start);
-        let painted_target = (target_row as usize).checked_sub(self.painted_row_start);
-        let x = self
-            .lines
-            .get(painted_row.unwrap_or(usize::MAX))
-            .map(|l| l.x_for_index(col))
-            .unwrap_or(px(0.));
-        let target_col = self
-            .lines
-            .get(painted_target.unwrap_or(usize::MAX))
-            .map(|l| l.closest_index_for_x(x))
-            .unwrap_or(col);
         let starts = self.line_starts();
-        let offset = starts[target_line] + target_col.min(self.line_len(target_line, starts));
-        self.move_to(offset, cx);
+        let source_text = &self.content[starts[line]..self.cursor_offset()];
+        let target_text = self.line_text(target_line);
+        let fallback_col = target_text
+            .grapheme_indices(true)
+            .nth(source_text.graphemes(true).count())
+            .map_or(target_text.len(), |(index, _)| index);
+        let source_layout = row
+            .checked_sub(self.painted_row_start)
+            .and_then(|row| self.lines.get(row));
+        let target_layout = (target_row as usize)
+            .checked_sub(self.painted_row_start)
+            .and_then(|row| self.lines.get(row));
+        let target_col = source_layout
+            .zip(target_layout)
+            .map_or(fallback_col, |(source, target)| {
+                target.closest_index_for_x(source.x_for_index(col))
+            });
+        starts[target_line] + clamped_char_boundary(target_text, target_col)
     }
 
-    fn up(&mut self, _: &Up, _window: &mut Window, cx: &mut Context<Self>) {
-        self.move_vertical(-1, cx);
+    fn up(&mut self, _: &Up, _: &mut Window, cx: &mut Context<Self>) {
+        self.move_to(self.vertical_offset(-1), cx);
     }
 
-    fn down(&mut self, _: &Down, _window: &mut Window, cx: &mut Context<Self>) {
-        self.move_vertical(1, cx);
+    fn down(&mut self, _: &Down, _: &mut Window, cx: &mut Context<Self>) {
+        self.move_to(self.vertical_offset(1), cx);
+    }
+
+    fn select_up(&mut self, _: &SelectUp, _: &mut Window, cx: &mut Context<Self>) {
+        self.select_to(self.vertical_offset(-1), cx);
+    }
+
+    fn select_down(&mut self, _: &SelectDown, _: &mut Window, cx: &mut Context<Self>) {
+        self.select_to(self.vertical_offset(1), cx);
     }
 
     fn select_left(&mut self, _: &SelectLeft, _: &mut Window, cx: &mut Context<Self>) {
@@ -791,15 +805,166 @@ impl CodeEditor {
     }
 
     fn home(&mut self, _: &Home, _: &mut Window, cx: &mut Context<Self>) {
-        let (line, _) = self.line_index_for_offset(self.cursor_offset());
-        let starts = self.line_starts();
-        self.move_to(starts[line], cx);
+        self.move_to(line_start(&self.content, self.cursor_offset()), cx);
     }
 
     fn end(&mut self, _: &End, _: &mut Window, cx: &mut Context<Self>) {
-        let (line, _) = self.line_index_for_offset(self.cursor_offset());
-        let starts = self.line_starts();
-        self.move_to(starts[line] + self.line_len(line, starts), cx);
+        self.move_to(line_end(&self.content, self.cursor_offset()), cx);
+    }
+
+    fn select_home(&mut self, _: &SelectHome, _: &mut Window, cx: &mut Context<Self>) {
+        self.select_to(line_start(&self.content, self.cursor_offset()), cx);
+    }
+
+    fn select_end(&mut self, _: &SelectEnd, _: &mut Window, cx: &mut Context<Self>) {
+        self.select_to(line_end(&self.content, self.cursor_offset()), cx);
+    }
+
+    fn document_start(&mut self, _: &DocumentStart, _: &mut Window, cx: &mut Context<Self>) {
+        self.move_to(0, cx);
+    }
+
+    fn document_end(&mut self, _: &DocumentEnd, _: &mut Window, cx: &mut Context<Self>) {
+        self.move_to(self.content.len(), cx);
+    }
+
+    fn select_document_start(
+        &mut self,
+        _: &SelectDocumentStart,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.select_to(0, cx);
+    }
+
+    fn select_document_end(
+        &mut self,
+        _: &SelectDocumentEnd,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.select_to(self.content.len(), cx);
+    }
+
+    fn word_left(&mut self, _: &WordLeft, _: &mut Window, cx: &mut Context<Self>) {
+        self.move_to(
+            previous_word_boundary(&self.content, self.cursor_offset()),
+            cx,
+        );
+    }
+
+    fn word_right(&mut self, _: &WordRight, _: &mut Window, cx: &mut Context<Self>) {
+        self.move_to(next_word_boundary(&self.content, self.cursor_offset()), cx);
+    }
+
+    fn select_word_left(&mut self, _: &SelectWordLeft, _: &mut Window, cx: &mut Context<Self>) {
+        self.select_to(
+            previous_word_boundary(&self.content, self.cursor_offset()),
+            cx,
+        );
+    }
+
+    fn select_word_right(&mut self, _: &SelectWordRight, _: &mut Window, cx: &mut Context<Self>) {
+        self.select_to(next_word_boundary(&self.content, self.cursor_offset()), cx);
+    }
+
+    fn delete_to(
+        &mut self,
+        offset: usize,
+        kill: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let cursor = self.cursor_offset();
+        let range = if self.selected_range.is_empty() {
+            cursor.min(offset)..cursor.max(offset)
+        } else {
+            self.selected_range.clone()
+        };
+        if range.is_empty() {
+            window.play_system_bell();
+            return;
+        }
+        if kill {
+            cx.set_global(KillBuffer(self.content[range.clone()].to_string().into()));
+        }
+        self.replace_text_in_range(Some(self.range_to_utf16(&range)), "", window, cx);
+    }
+
+    fn delete_word_left(
+        &mut self,
+        _: &DeleteWordLeft,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.delete_to(
+            previous_word_boundary(&self.content, self.cursor_offset()),
+            false,
+            window,
+            cx,
+        );
+    }
+
+    fn delete_word_right(
+        &mut self,
+        _: &DeleteWordRight,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.delete_to(
+            next_word_boundary(&self.content, self.cursor_offset()),
+            false,
+            window,
+            cx,
+        );
+    }
+
+    fn delete_to_beginning_of_line(
+        &mut self,
+        _: &DeleteToBeginningOfLine,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.delete_to(
+            line_start(&self.content, self.cursor_offset()),
+            false,
+            window,
+            cx,
+        );
+    }
+
+    fn delete_to_end_of_line(
+        &mut self,
+        _: &DeleteToEndOfLine,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.delete_to(
+            line_end(&self.content, self.cursor_offset()),
+            false,
+            window,
+            cx,
+        );
+    }
+
+    fn kill_to_end_of_line(
+        &mut self,
+        _: &KillToEndOfLine,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.delete_to(
+            kill_line_end(&self.content, self.cursor_offset()),
+            true,
+            window,
+            cx,
+        );
+    }
+
+    fn yank(&mut self, _: &Yank, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(text) = cx.try_global::<KillBuffer>().map(|buffer| buffer.0.clone()) {
+            self.replace_text_in_range(None, &text, window, cx);
+        }
     }
 
     fn backspace(&mut self, _: &Backspace, window: &mut Window, cx: &mut Context<Self>) {
@@ -973,6 +1138,7 @@ impl CodeEditor {
 
     fn move_to(&mut self, offset: usize, cx: &mut Context<Self>) {
         self.selected_range = offset..offset;
+        self.selection_reversed = false;
         self.ensure_offset_visible(offset);
         self.scroll_selection_into_view();
         self.reset_blink(cx);
@@ -1152,8 +1318,12 @@ impl EntityInputHandler for CodeEditor {
         }
         self.selected_range = new_selected_range_utf16
             .as_ref()
-            .map(|range_utf16| self.range_from_utf16(range_utf16))
-            .map(|new_range| new_range.start + range.start..new_range.end + range.end)
+            .map(|range_utf16| {
+                // IME selection is relative to the newly marked text, in UTF-16.
+                // Both ends must be rebased onto the replacement's start.
+                range.start + utf8_offset_from_utf16(new_text, range_utf16.start)
+                    ..range.start + utf8_offset_from_utf16(new_text, range_utf16.end)
+            })
             .unwrap_or_else(|| range.start + new_text.len()..range.start + new_text.len());
 
         self.selection_reversed = false;
@@ -1948,6 +2118,24 @@ impl Render for CodeEditor {
             .on_action(cx.listener(Self::down))
             .on_action(cx.listener(Self::select_left))
             .on_action(cx.listener(Self::select_right))
+            .on_action(cx.listener(Self::select_up))
+            .on_action(cx.listener(Self::select_down))
+            .on_action(cx.listener(Self::word_left))
+            .on_action(cx.listener(Self::word_right))
+            .on_action(cx.listener(Self::select_word_left))
+            .on_action(cx.listener(Self::select_word_right))
+            .on_action(cx.listener(Self::select_home))
+            .on_action(cx.listener(Self::select_end))
+            .on_action(cx.listener(Self::document_start))
+            .on_action(cx.listener(Self::document_end))
+            .on_action(cx.listener(Self::select_document_start))
+            .on_action(cx.listener(Self::select_document_end))
+            .on_action(cx.listener(Self::delete_word_left))
+            .on_action(cx.listener(Self::delete_word_right))
+            .on_action(cx.listener(Self::delete_to_beginning_of_line))
+            .on_action(cx.listener(Self::delete_to_end_of_line))
+            .on_action(cx.listener(Self::kill_to_end_of_line))
+            .on_action(cx.listener(Self::yank))
             .on_action(cx.listener(Self::select_all))
             .on_action(cx.listener(Self::home))
             .on_action(cx.listener(Self::end))
@@ -1983,7 +2171,7 @@ impl Render for CodeEditor {
             .text_color(theme::text())
             .text_sm()
             .line_height(px(20.))
-            .font_family("Menlo")
+            .font_family(crate::assets::monospace_font_family())
             .h(px(380.))
             .items_start()
             .overflow_hidden()
@@ -2010,10 +2198,300 @@ impl Focusable for CodeEditor {
 #[cfg(test)]
 mod tests {
     use super::{
-        horizontal_scroll_for_caret, line_starts_after_edit, painted_row_range,
+        CodeEditor, horizontal_scroll_for_caret, line_starts_after_edit, painted_row_range,
         scroll_amount_for_thumb_top, vertical_scrollbar_geometry,
     };
-    use gpui::{Bounds, point, px, size};
+    use crate::highlight::Lang;
+    use gpui::{
+        Bounds, EntityInputHandler, Focusable, KeyUpEvent, Keystroke, TestAppContext,
+        VisualTestContext, point, px, size,
+    };
+
+    fn press(cx: &mut VisualTestContext, keys: &str) {
+        for key in keys.split_whitespace() {
+            cx.simulate_keystrokes(key);
+            cx.simulate_event(KeyUpEvent {
+                keystroke: Keystroke::parse(key).unwrap(),
+            });
+        }
+    }
+
+    fn primary(key: &str) -> String {
+        format!(
+            "{}-{key}",
+            if cfg!(target_os = "macos") {
+                "cmd"
+            } else {
+                "ctrl"
+            }
+        )
+    }
+
+    #[gpui::test]
+    fn editor_clipboard_and_undo_redo_shortcuts_reach_the_buffer(cx: &mut TestAppContext) {
+        cx.update(crate::text_input::bind_keys);
+        let (editor, cx) = cx.add_window_view(|window, cx| {
+            let mut editor = CodeEditor::new(cx, Lang::Json, "config");
+            editor.set_content("{\"name\":\"你好🙂\"}", cx);
+            editor.focus_handle.focus(window, cx);
+            editor
+        });
+        press(cx, &format!("{} {}", primary("a"), primary("x")));
+        editor.read_with(cx, |editor, _| assert!(editor.content.is_empty()));
+        cx.update(|_, cx| {
+            assert_eq!(
+                cx.read_from_clipboard()
+                    .and_then(|item| item.text())
+                    .as_deref(),
+                Some("{\"name\":\"你好🙂\"}")
+            );
+        });
+        press(cx, &primary("z"));
+        editor.read_with(cx, |editor, _| {
+            assert_eq!(editor.content.as_ref(), "{\"name\":\"你好🙂\"}")
+        });
+        press(cx, &primary("shift-z"));
+        editor.read_with(cx, |editor, _| assert!(editor.content.is_empty()));
+        press(cx, &primary("v"));
+        editor.read_with(cx, |editor, _| {
+            assert_eq!(editor.content.as_ref(), "{\"name\":\"你好🙂\"}")
+        });
+    }
+
+    #[gpui::test]
+    fn find_input_owns_clipboard_shortcuts_while_navigation_bubbles_to_editor(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(crate::text_input::bind_keys);
+        let (editor, cx) = cx.add_window_view(|window, cx| {
+            let mut editor = CodeEditor::new(cx, Lang::Plain, "config");
+            editor.set_content("alpha beta alpha", cx);
+            editor.focus_handle.focus(window, cx);
+            editor
+        });
+        press(cx, &primary("f"));
+        cx.simulate_input("alpha");
+        press(cx, &format!("{} {}", primary("a"), primary("c")));
+        cx.update(|_, cx| {
+            assert_eq!(
+                cx.read_from_clipboard()
+                    .and_then(|item| item.text())
+                    .as_deref(),
+                Some("alpha")
+            );
+        });
+        press(cx, "enter");
+        editor.read_with(cx, |editor, cx| {
+            assert_eq!(editor.content.as_ref(), "alpha beta alpha");
+            assert_eq!(editor.selected_range, 11..16);
+            assert_eq!(
+                editor
+                    .find_input
+                    .as_ref()
+                    .unwrap()
+                    .read(cx)
+                    .content()
+                    .as_ref(),
+                "alpha"
+            );
+        });
+        press(cx, "escape");
+        press(cx, &format!("{} {}", primary("a"), primary("c")));
+        editor.read_with(cx, |editor, _| assert!(!editor.find_visible));
+        cx.update(|_, cx| {
+            assert_eq!(
+                cx.read_from_clipboard()
+                    .and_then(|item| item.text())
+                    .as_deref(),
+                Some("alpha beta alpha")
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn find_toolbar_tab_navigation_does_not_indent_the_document(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            crate::keyboard::bind_keys(cx);
+            crate::text_input::bind_keys(cx);
+            super::bind_keys(cx);
+        });
+        let (editor, cx) = cx.add_window_view(|window, cx| {
+            let mut editor = CodeEditor::new(cx, Lang::Plain, "config");
+            editor.set_content("alpha beta alpha", cx);
+            editor.selected_range = 0..0;
+            editor.focus_handle.focus(window, cx);
+            editor
+        });
+        cx.update(|window, _| window.activate_window());
+
+        // Tab still belongs to the editor when its actual text surface owns
+        // focus. Descendant search fields and toolbar controls own navigation.
+        press(cx, "tab");
+        let expected = "  alpha beta alpha";
+        editor.read_with(cx, |editor, _| {
+            assert_eq!(editor.content.as_ref(), expected)
+        });
+        press(cx, &primary("f"));
+        cx.simulate_input("alpha");
+        let search = cx.update(|window, cx| {
+            let search = editor
+                .read(cx)
+                .find_input
+                .as_ref()
+                .unwrap()
+                .read(cx)
+                .focus_handle(cx);
+            assert!(search.is_focused(window));
+            search
+        });
+
+        press(cx, "tab");
+        let previous_button = cx.update(|window, cx| {
+            let focus = window.focused(cx).expect("previous-match button focus");
+            assert_ne!(focus, search);
+            assert_ne!(focus, editor.read(cx).focus_handle);
+            focus
+        });
+        press(cx, "tab");
+        cx.update(|window, cx| {
+            let focus = window.focused(cx).expect("next-match button focus");
+            assert_ne!(focus, previous_button);
+            assert_ne!(focus, search);
+            assert_ne!(focus, editor.read(cx).focus_handle);
+        });
+        press(cx, "shift-tab");
+        cx.update(|window, _| assert!(previous_button.is_focused(window)));
+        press(cx, "shift-tab");
+        cx.update(|window, _| assert!(search.is_focused(window)));
+        press(cx, "shift-tab");
+        cx.update(|window, cx| assert!(editor.read(cx).focus_handle.is_focused(window)));
+        editor.read_with(cx, |editor, cx| {
+            assert_eq!(editor.content.as_ref(), expected);
+            assert_eq!(
+                editor
+                    .find_input
+                    .as_ref()
+                    .unwrap()
+                    .read(cx)
+                    .content()
+                    .as_ref(),
+                "alpha"
+            );
+        });
+    }
+
+    #[cfg(target_os = "macos")]
+    #[gpui::test]
+    fn editor_mac_word_line_and_document_shortcuts_keep_selection_direction(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(crate::text_input::bind_keys);
+        let (editor, cx) = cx.add_window_view(|window, cx| {
+            let mut editor = CodeEditor::new(cx, Lang::Plain, "config");
+            editor.set_content("first\nsecond 变量", cx);
+            editor.focus_handle.focus(window, cx);
+            editor
+        });
+        press(cx, "cmd-down alt-shift-left cmd-c");
+        cx.update(|_, cx| {
+            assert_eq!(
+                cx.read_from_clipboard()
+                    .and_then(|item| item.text())
+                    .as_deref(),
+                Some("变量")
+            );
+        });
+        // A normal movement must reset the backwards selection anchor.
+        press(cx, "cmd-left shift-right cmd-c");
+        editor.read_with(cx, |editor, _| {
+            assert_eq!(&editor.content[editor.selected_range.clone()], "s");
+            assert!(!editor.selection_reversed);
+        });
+        press(cx, "cmd-right cmd-backspace");
+        editor.read_with(cx, |editor, _| {
+            assert_eq!(editor.content.as_ref(), "first\n")
+        });
+        press(cx, "cmd-z cmd-up ctrl-e ctrl-k");
+        editor.read_with(cx, |editor, _| {
+            assert_eq!(editor.content.as_ref(), "firstsecond 变量")
+        });
+        press(cx, "ctrl-y cmd-shift-down");
+        editor.read_with(cx, |editor, _| {
+            assert_eq!(editor.content.as_ref(), "first\nsecond 变量");
+            assert_eq!(
+                &editor.content[editor.selected_range.clone()],
+                "second 变量"
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn editor_ime_selection_is_relative_to_marked_text_then_shortcuts_work(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(crate::text_input::bind_keys);
+        let (editor, cx) = cx.add_window_view(|window, cx| {
+            let mut editor = CodeEditor::new(cx, Lang::Plain, "config");
+            editor.set_content("prefix old suffix", cx);
+            editor.selected_range = 7..10;
+            editor.focus_handle.focus(window, cx);
+            editor
+        });
+        cx.update(|window, cx| {
+            editor.update(cx, |editor, cx| {
+                editor.replace_and_mark_text_in_range(None, "你🙂", Some(3..3), window, cx);
+                assert_eq!(editor.content.as_ref(), "prefix 你🙂 suffix");
+                assert_eq!(editor.selected_range, 14..14);
+                assert_eq!(editor.marked_range, Some(7..14));
+                editor.replace_and_mark_text_in_range(None, "你好🙂", Some(4..4), window, cx);
+                assert_eq!(editor.selected_range, 17..17);
+                editor.replace_text_in_range(None, "你好🙂", window, cx);
+            })
+        });
+        press(cx, &format!("shift-left {} backspace", primary("c")));
+        editor.read_with(cx, |editor, _| {
+            assert_eq!(editor.content.as_ref(), "prefix 你好 suffix")
+        });
+        cx.update(|_, cx| {
+            assert_eq!(
+                cx.read_from_clipboard()
+                    .and_then(|item| item.text())
+                    .as_deref(),
+                Some("🙂")
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn editor_undo_clamps_the_selection_to_utf8_boundaries(cx: &mut TestAppContext) {
+        cx.update(crate::text_input::bind_keys);
+        let (editor, cx) = cx.add_window_view(|window, cx| {
+            let mut editor = CodeEditor::new(cx, Lang::Plain, "config");
+            editor.set_content("ééé", cx);
+            editor.focus_handle.focus(window, cx);
+            editor
+        });
+        cx.update(|window, cx| {
+            editor.update(cx, |editor, cx| {
+                editor.replace_text_in_range(Some(0..1), "abc", window, cx);
+            })
+        });
+        press(cx, &primary("z"));
+        editor.read_with(cx, |editor, _| {
+            assert_eq!(editor.content.as_ref(), "ééé");
+            assert!(editor.content.is_char_boundary(editor.selected_range.start));
+            assert!(editor.content.is_char_boundary(editor.selected_range.end));
+        });
+        press(cx, &format!("shift-right {}", primary("c")));
+        cx.update(|_, cx| {
+            assert_eq!(
+                cx.read_from_clipboard()
+                    .and_then(|item| item.text())
+                    .as_deref(),
+                Some("é")
+            );
+        });
+    }
 
     #[test]
     fn editor_shapes_only_viewport_rows_with_small_overdraw() {

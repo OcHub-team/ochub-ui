@@ -39,8 +39,8 @@
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, App, ElementId, FontWeight, KeyBinding, KeyDownEvent, SharedString, Window,
-    actions, div, prelude::*, px,
+    AnyElement, App, ElementId, FontWeight, KeyBinding, SharedString, Window, actions, div,
+    prelude::*, px,
 };
 
 use crate::components::{self, ButtonSize, ButtonTone, DISABLED_OPACITY};
@@ -409,24 +409,13 @@ const ROW_KEY_CONTEXT: &str = "SettingsRow";
 /// `enter` binding is already registered there, and ties in the keymap are
 /// broken by registration order.
 ///
-/// Wiring this up is optional. The rows also handle a bare Space/Enter key press
-/// directly, and that fallback only runs when no binding consumed the keystroke,
-/// so keyboard activation works either way and never fires twice.
+/// Wiring this up is optional. GPUI's focused-control click synthesis provides
+/// the fallback when no binding consumes the keystroke.
 pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("space", Activate, Some(ROW_KEY_CONTEXT)),
         KeyBinding::new("enter", Activate, Some(ROW_KEY_CONTEXT)),
     ]);
-}
-
-/// A bare Space/Enter press — no modifiers, not a key repeat.
-///
-/// Holding a key down would otherwise toggle a switch dozens of times, and
-/// `cmd-enter` belongs to whichever page-level command claimed it.
-fn is_activation_key(event: &KeyDownEvent) -> bool {
-    !event.is_held
-        && !event.keystroke.modifiers.modified()
-        && matches!(event.keystroke.key.as_str(), "space" | "enter")
 }
 
 /// The shared frame behind every interactive row: same geometry as [`row`],
@@ -475,22 +464,17 @@ fn row_frame(id: &SharedString, disabled: bool) -> gpui::Stateful<gpui::Div> {
 
 /// Wire a row's keyboard activation.
 ///
-/// Two paths on purpose. The [`Activate`] action is the idiomatic gpui route —
-/// it is what a keymap, a command palette or an assistive technology can see —
-/// and it fires when [`bind_keys`] has been called. The raw key handler is the
-/// fallback for a build that never registered those bindings. gpui stops
-/// propagation as soon as an action listener runs, and key-down listeners are
-/// dispatched only after every matching binding has been offered the keystroke,
-/// so exactly one of the two ever fires.
+/// A focused child control must not also activate its containing row. GPUI
+/// synthesizes keyboard clicks only for the element that actually holds focus,
+/// whereas a bubbling raw key handler also sees the child's keys.
 fn with_activation(
     row: gpui::Stateful<gpui::Div>,
     activate: RowActivation,
 ) -> gpui::Stateful<gpui::Div> {
     let from_action = activate.clone();
     row.on_action(move |_: &Activate, window, cx| from_action(window, cx))
-        .on_key_down(move |event, window, cx| {
-            if is_activation_key(event) {
-                cx.stop_propagation();
+        .on_click(move |event, window, cx| {
+            if matches!(event, gpui::ClickEvent::Keyboard(_)) {
                 activate(window, cx);
             }
         })
@@ -542,8 +526,11 @@ pub fn switch_row(
     let activate: RowActivation = Rc::new(on_toggle);
     let clicked = activate.clone();
     with_activation(
-        row.cursor_pointer()
-            .on_click(move |_event, window, cx| clicked(window, cx)),
+        row.cursor_pointer().on_click(move |event, window, cx| {
+            if matches!(event, gpui::ClickEvent::Mouse(_)) {
+                clicked(window, cx);
+            }
+        }),
         activate,
     )
 }
@@ -695,8 +682,11 @@ pub fn navigate_row(
     let activate: RowActivation = Rc::new(on_open);
     let clicked = activate.clone();
     with_activation(
-        row.cursor_pointer()
-            .on_click(move |_event, window, cx| clicked(window, cx)),
+        row.cursor_pointer().on_click(move |event, window, cx| {
+            if matches!(event, gpui::ClickEvent::Mouse(_)) {
+                clicked(window, cx);
+            }
+        }),
         activate,
     )
 }

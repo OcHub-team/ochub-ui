@@ -19,6 +19,7 @@ use gpui::{
 use crate::anim::RotateTo;
 use crate::i18n::{Key, k, raw, t};
 use crate::icons::{IconName, icon};
+use crate::keyboard;
 use crate::scrollbar::VerticalScrollbar;
 use crate::text_input::TextInput;
 use crate::tf;
@@ -199,7 +200,9 @@ fn button_base(
             FontWeight::MEDIUM
         });
     if enabled {
-        base = base.cursor_pointer().hover(|s| s.bg(hover_bg));
+        base = keyboard::interactive(base)
+            .cursor_pointer()
+            .hover(|s| s.bg(hover_bg));
     }
     match size {
         ButtonSize::Sm => base.px_3().py_1(),
@@ -270,41 +273,43 @@ pub fn context_menu_item(
     let label = label.into();
     let shortcut = shortcut.map(Into::into);
     let foreground = if danger { theme::red() } else { theme::text() };
-    div()
-        .id(id)
-        .role(gpui::Role::MenuItem)
-        .aria_label(label.clone())
-        .flex()
-        .items_center()
-        .gap_2()
-        .h(px(30.))
-        .px_2()
-        .rounded_md()
-        .text_sm()
-        .text_color(foreground)
-        .cursor_pointer()
-        .hover(move |style| {
-            style.bg(if danger {
-                theme::red_soft()
-            } else {
-                theme::surface_hover()
+    keyboard::interactive(
+        div()
+            .id(id)
+            .role(gpui::Role::MenuItem)
+            .aria_label(label.clone())
+            .flex()
+            .items_center()
+            .gap_2()
+            .h(px(30.))
+            .px_2()
+            .rounded_md()
+            .text_sm()
+            .text_color(foreground)
+            .cursor_pointer()
+            .hover(move |style| {
+                style.bg(if danger {
+                    theme::red_soft()
+                } else {
+                    theme::surface_hover()
+                })
             })
-        })
-        .when_some(name, |row, name| {
-            row.child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .w(px(18.))
-                    .child(icon(name, foreground, 13.)),
-            )
-        })
-        .when(name.is_none(), |row| row.child(div().w(px(18.))))
-        .child(div().flex_1().min_w_0().truncate().child(label))
-        .when_some(shortcut, |row, shortcut| {
-            row.child(div().text_xs().text_color(theme::muted()).child(shortcut))
-        })
+            .when_some(name, |row, name| {
+                row.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .w(px(18.))
+                        .child(icon(name, foreground, 13.)),
+                )
+            })
+            .when(name.is_none(), |row| row.child(div().w(px(18.))))
+            .child(div().flex_1().min_w_0().truncate().child(label))
+            .when_some(shortcut, |row, shortcut| {
+                row.child(div().text_xs().text_color(theme::muted()).child(shortcut))
+            }),
+    )
 }
 
 // Back-compat shims (existing call sites) — new code should use `button` /
@@ -354,6 +359,69 @@ pub fn icon_button(
 }
 
 // ── Form fields ─────────────────────────────────────────────────────────────
+
+/// Compact, left-aligned checkbox for related preferences. The label and mark
+/// form one keyboard/AX control; a disabled checkbox keeps its state visible
+/// but has no focus stop or activation handler.
+pub fn checkbox(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    checked: bool,
+    disabled: bool,
+    on_change: impl Fn(&mut Window, &mut App) + 'static,
+) -> gpui::Stateful<gpui::Div> {
+    let label = label.into();
+    let mark = div()
+        .size(px(16.))
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(3.))
+        .border_1()
+        .border_color(if checked {
+            theme::accent_fill()
+        } else {
+            theme::border_strong()
+        })
+        .bg(if checked {
+            theme::accent_fill()
+        } else {
+            theme::inset()
+        })
+        .when(checked, |mark| {
+            mark.child(icon(IconName::Check, theme::accent_text(), 12.))
+        });
+    let control = div()
+        .id(id)
+        .role(gpui::Role::CheckBox)
+        .aria_label(label.clone())
+        .aria_toggled(if checked {
+            gpui::Toggled::True
+        } else {
+            gpui::Toggled::False
+        })
+        .flex()
+        .flex_row()
+        .items_center()
+        .min_w_0()
+        .gap_2()
+        .px_3()
+        .py_2()
+        .rounded_md()
+        .text_sm()
+        .text_color(theme::text())
+        .child(mark)
+        .child(div().min_w_0().child(label));
+    if disabled {
+        control.opacity(DISABLED_OPACITY)
+    } else {
+        keyboard::interactive(control)
+            .cursor_pointer()
+            .hover(|style| style.bg(theme::inset()))
+            .on_click(move |_, window, cx| on_change(window, cx))
+    }
+}
 
 /// Vertical field: caption label (optionally marked required), optional muted
 /// help line, then the control. The single way to label form controls.
@@ -622,7 +690,7 @@ fn segmented_track(
             .text_sm()
             .child(SharedString::from(option.to_string()));
         if on_select.is_some() {
-            item = item.cursor_pointer();
+            item = keyboard::interactive(item).cursor_pointer();
         }
         if is_selected {
             item = item
@@ -833,7 +901,7 @@ fn select_dropdown_control(
             }),
     };
     if let Some(handler) = on_event.clone() {
-        trigger = trigger.cursor_pointer();
+        trigger = keyboard::interactive(trigger).cursor_pointer();
         trigger = match chrome {
             SelectDropdownChrome::Field => {
                 trigger.hover(|style| style.border_color(theme::accent()).bg(theme::panel()))
@@ -844,7 +912,7 @@ fn select_dropdown_control(
                     .text_color(theme::sidebar_text())
             }),
         };
-        trigger = trigger.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
+        trigger = trigger.on_click(move |_event, window, cx| {
             handler(SelectDropdownEvent::Open(!open), window, cx)
         });
     }
@@ -912,9 +980,11 @@ fn select_dropdown_control(
                 .text_color(theme::subtext())
                 .hover(|style| style.bg(theme::surface_hover()).text_color(theme::text()));
         }
-        menu = menu.child(item.on_click(move |_event, window, cx| {
-            callback(SelectDropdownEvent::Select(index), window, cx)
-        }));
+        menu = menu.child(
+            keyboard::interactive(item).on_click(move |_event, window, cx| {
+                callback(SelectDropdownEvent::Select(index), window, cx)
+            }),
+        );
     }
     let dismiss = handler;
     menu = menu.on_mouse_down_out(move |_event, window, cx| {
@@ -1182,6 +1252,7 @@ pub fn modal_card() -> gpui::Div {
 /// Modal title bar (title + trailing slot via `.child(...)`).
 pub fn modal_header(title: impl Into<SharedString>) -> gpui::Div {
     div()
+        .flex_none()
         .flex()
         .flex_row()
         .items_center()
@@ -1207,6 +1278,7 @@ pub fn modal_body() -> gpui::Div {
 /// Modal action row (right-aligned buttons).
 pub fn modal_footer(actions: Vec<AnyElement>) -> gpui::Div {
     div()
+        .flex_none()
         .flex()
         .flex_row()
         .items_center()
@@ -1230,43 +1302,45 @@ pub fn disclosure(
     expanded: bool,
 ) -> gpui::Stateful<gpui::Div> {
     let title = title.into();
-    div()
-        .id(id)
-        .role(gpui::Role::Button)
-        .aria_label(title.clone())
-        .aria_expanded(expanded)
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap_2()
-        .w_full()
-        .cursor_pointer()
-        // One chevron turned a quarter turn, rather than two icons swapped:
-        // the mark stays the same object through the toggle, which is what
-        // makes the section read as opening instead of being replaced.
-        .child(RotateTo::new(
-            SharedString::from(format!("{id}-chevron")),
-            if expanded { FRAC_PI_2 } else { 0. },
-            DISCLOSURE_TURN,
-            icon(IconName::ChevronRight, theme::muted(), 14.),
-        ))
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(2.))
-                .min_w_0()
-                .child(
-                    div()
-                        .text_color(theme::text())
-                        .text_sm()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .child(title),
-                )
-                .when_some(detail, |column, detail| {
-                    column.child(div().text_color(theme::muted()).text_xs().child(detail))
-                }),
-        )
+    keyboard::interactive(
+        div()
+            .id(id)
+            .role(gpui::Role::Button)
+            .aria_label(title.clone())
+            .aria_expanded(expanded)
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_2()
+            .w_full()
+            .cursor_pointer()
+            // One chevron turned a quarter turn, rather than two icons swapped:
+            // the mark stays the same object through the toggle, which is what
+            // makes the section read as opening instead of being replaced.
+            .child(RotateTo::new(
+                SharedString::from(format!("{id}-chevron")),
+                if expanded { FRAC_PI_2 } else { 0. },
+                DISCLOSURE_TURN,
+                icon(IconName::ChevronRight, theme::muted(), 14.),
+            ))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.))
+                    .min_w_0()
+                    .child(
+                        div()
+                            .text_color(theme::text())
+                            .text_sm()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(title),
+                    )
+                    .when_some(detail, |column, detail| {
+                        column.child(div().text_color(theme::muted()).text_xs().child(detail))
+                    }),
+            ),
+    )
 }
 
 // ── Stat tile ───────────────────────────────────────────────────────────────
@@ -2183,7 +2257,59 @@ pub fn format_bytes(bytes: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::select_prefers_dropdown;
+    use gpui::{Context, KeyUpEvent, Keystroke, Render, TestAppContext, Window, div, prelude::*};
+
+    use super::{checkbox, select_prefers_dropdown};
+
+    struct CheckboxProbe {
+        checked: bool,
+        activations: usize,
+    }
+
+    impl Render for CheckboxProbe {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let toggle = cx.listener(|this, _: &(), _, cx| {
+                this.checked = !this.checked;
+                this.activations += 1;
+                cx.notify();
+            });
+            div()
+                .flex()
+                .flex_col()
+                .child(checkbox("disabled", "Disabled", false, true, |_, _| {
+                    panic!("a disabled checkbox must not activate")
+                }))
+                .child(checkbox(
+                    "enabled",
+                    "Enabled",
+                    self.checked,
+                    false,
+                    move |window, cx| toggle(&(), window, cx),
+                ))
+        }
+    }
+
+    #[gpui::test]
+    fn compact_checkbox_skips_disabled_and_activates_once(cx: &mut TestAppContext) {
+        cx.update(crate::keyboard::bind_keys);
+        let (probe, cx) = cx.add_window_view(|_, _| CheckboxProbe {
+            checked: false,
+            activations: 0,
+        });
+        cx.update(|window, _| window.activate_window());
+        for (key, expected_count, expected_checked) in
+            [("tab", 0, false), ("enter", 1, true), ("space", 2, false)]
+        {
+            cx.simulate_keystrokes(key);
+            cx.simulate_event(KeyUpEvent {
+                keystroke: Keystroke::parse(key).unwrap(),
+            });
+            probe.read_with(cx, |probe, _| {
+                assert_eq!(probe.activations, expected_count);
+                assert_eq!(probe.checked, expected_checked);
+            });
+        }
+    }
 
     #[test]
     fn short_compact_selects_stay_segmented() {

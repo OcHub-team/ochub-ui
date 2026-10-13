@@ -61,3 +61,7 @@
 "common.row.navigate.aria" = "{label}、サブページを開く"
 "common.row.select.aria" = "{label}：{value}"
 "common.segmented.option.aria" = "{id} オプション {option}"
+"common.window.close" = "ウィンドウを閉じる"
+"common.window.maximize" = "ウィンドウを最大化"
+"common.window.minimize" = "ウィンドウを最小化"
+"common.window.restore" = "ウィンドウを元に戻す"

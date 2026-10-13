@@ -62,3 +62,7 @@
 "common.row.navigate.aria" = "{label}, opens a subpage"
 "common.row.select.aria" = "{label}: {value}"
 "common.segmented.option.aria" = "{id} option {option}"
+"common.window.close" = "Close window"
+"common.window.maximize" = "Maximize window"
+"common.window.minimize" = "Minimize window"
+"common.window.restore" = "Restore window"

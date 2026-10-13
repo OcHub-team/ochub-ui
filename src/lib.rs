@@ -16,7 +16,9 @@ pub mod gallery;
 pub mod highlight;
 pub mod i18n;
 pub mod icons;
+pub mod keyboard;
 pub mod layout;
+pub mod modal;
 pub mod notifications;
 pub mod scrollbar;
 pub mod text_input;
@@ -33,8 +35,10 @@ pub use zed_text;
 /// Install every key binding owned by the component library.
 pub fn install(cx: &mut gpui::App) {
     assets::install_fonts(cx);
+    keyboard::bind_keys(cx);
     text_input::bind_keys(cx);
     #[cfg(not(target_family = "wasm"))]
     code_editor::bind_keys(cx);
     layout::bind_keys(cx);
+    modal::bind_keys(cx);
 }

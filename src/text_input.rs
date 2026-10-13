@@ -34,9 +34,27 @@ actions!(
         Down,
         SelectLeft,
         SelectRight,
+        SelectUp,
+        SelectDown,
+        WordLeft,
+        WordRight,
+        SelectWordLeft,
+        SelectWordRight,
         SelectAll,
         Home,
         End,
+        SelectHome,
+        SelectEnd,
+        DocumentStart,
+        DocumentEnd,
+        SelectDocumentStart,
+        SelectDocumentEnd,
+        DeleteWordLeft,
+        DeleteWordRight,
+        DeleteToBeginningOfLine,
+        DeleteToEndOfLine,
+        KillToEndOfLine,
+        Yank,
         Newline,
         ShowCharacterPalette,
         Paste,
@@ -55,54 +73,108 @@ pub enum TextInputEvent {
     Changed,
 }
 
+const INPUT_CONTEXT: Option<&str> = Some("TextInput || SearchInput || CodeEditor");
+
+/// Cocoa's Control-K/Control-Y use an app-local kill buffer, independently of
+/// the system clipboard used by Copy/Cut/Paste.
+#[derive(Default)]
+pub(crate) struct KillBuffer(pub SharedString);
+
+impl gpui::Global for KillBuffer {}
+
 /// Register the text-input key bindings. Call once from `main.rs`.
 pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
-        gpui::KeyBinding::new("backspace", Backspace, None),
-        gpui::KeyBinding::new("delete", Delete, None),
-        gpui::KeyBinding::new("left", Left, None),
-        gpui::KeyBinding::new("right", Right, None),
-        gpui::KeyBinding::new("up", Up, None),
-        gpui::KeyBinding::new("down", Down, None),
-        gpui::KeyBinding::new("shift-left", SelectLeft, None),
-        gpui::KeyBinding::new("shift-right", SelectRight, None),
-        gpui::KeyBinding::new("home", Home, None),
-        gpui::KeyBinding::new("end", End, None),
-        gpui::KeyBinding::new("enter", Newline, None),
-        gpui::KeyBinding::new("shift-enter", Newline, None),
+        gpui::KeyBinding::new("backspace", Backspace, INPUT_CONTEXT),
+        gpui::KeyBinding::new("delete", Delete, INPUT_CONTEXT),
+        gpui::KeyBinding::new("left", Left, INPUT_CONTEXT),
+        gpui::KeyBinding::new("right", Right, INPUT_CONTEXT),
+        gpui::KeyBinding::new("up", Up, INPUT_CONTEXT),
+        gpui::KeyBinding::new("down", Down, INPUT_CONTEXT),
+        gpui::KeyBinding::new("shift-left", SelectLeft, INPUT_CONTEXT),
+        gpui::KeyBinding::new("shift-right", SelectRight, INPUT_CONTEXT),
+        gpui::KeyBinding::new("shift-up", SelectUp, INPUT_CONTEXT),
+        gpui::KeyBinding::new("shift-down", SelectDown, INPUT_CONTEXT),
+        gpui::KeyBinding::new("shift-home", SelectHome, INPUT_CONTEXT),
+        gpui::KeyBinding::new("shift-end", SelectEnd, INPUT_CONTEXT),
+        gpui::KeyBinding::new("home", Home, INPUT_CONTEXT),
+        gpui::KeyBinding::new("end", End, INPUT_CONTEXT),
+        gpui::KeyBinding::new("enter", Newline, INPUT_CONTEXT),
+        gpui::KeyBinding::new("shift-enter", Newline, INPUT_CONTEXT),
         gpui::KeyBinding::new("enter", FindNext, Some("SearchInput")),
         gpui::KeyBinding::new("shift-enter", FindPrevious, Some("SearchInput")),
         gpui::KeyBinding::new("escape", CloseFind, Some("SearchInput")),
-        gpui::KeyBinding::new("f3", FindNext, None),
-        gpui::KeyBinding::new("shift-f3", FindPrevious, None),
+        gpui::KeyBinding::new("f3", FindNext, INPUT_CONTEXT),
+        gpui::KeyBinding::new("shift-f3", FindPrevious, INPUT_CONTEXT),
     ]);
 
     #[cfg(target_os = "macos")]
     cx.bind_keys([
-        gpui::KeyBinding::new("cmd-a", SelectAll, None),
-        gpui::KeyBinding::new("cmd-v", Paste, None),
-        gpui::KeyBinding::new("cmd-c", Copy, None),
-        gpui::KeyBinding::new("cmd-x", Cut, None),
-        gpui::KeyBinding::new("cmd-z", Undo, None),
-        gpui::KeyBinding::new("cmd-shift-z", Redo, None),
-        gpui::KeyBinding::new("cmd-f", Find, None),
-        gpui::KeyBinding::new("cmd-g", FindNext, None),
-        gpui::KeyBinding::new("cmd-shift-g", FindPrevious, None),
-        gpui::KeyBinding::new("ctrl-cmd-space", ShowCharacterPalette, None),
+        gpui::KeyBinding::new("cmd-a", SelectAll, INPUT_CONTEXT),
+        gpui::KeyBinding::new("cmd-v", Paste, INPUT_CONTEXT),
+        gpui::KeyBinding::new("cmd-c", Copy, INPUT_CONTEXT),
+        gpui::KeyBinding::new("cmd-x", Cut, INPUT_CONTEXT),
+        gpui::KeyBinding::new("cmd-z", Undo, INPUT_CONTEXT),
+        gpui::KeyBinding::new("cmd-shift-z", Redo, INPUT_CONTEXT),
+        gpui::KeyBinding::new("cmd-f", Find, INPUT_CONTEXT),
+        gpui::KeyBinding::new("cmd-g", FindNext, INPUT_CONTEXT),
+        gpui::KeyBinding::new("cmd-shift-g", FindPrevious, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-cmd-space", ShowCharacterPalette, INPUT_CONTEXT),
+        gpui::KeyBinding::new("alt-left", WordLeft, INPUT_CONTEXT),
+        gpui::KeyBinding::new("alt-right", WordRight, INPUT_CONTEXT),
+        gpui::KeyBinding::new("alt-shift-left", SelectWordLeft, INPUT_CONTEXT),
+        gpui::KeyBinding::new("alt-shift-right", SelectWordRight, INPUT_CONTEXT),
+        gpui::KeyBinding::new("alt-backspace", DeleteWordLeft, INPUT_CONTEXT),
+        gpui::KeyBinding::new("alt-delete", DeleteWordRight, INPUT_CONTEXT),
+        gpui::KeyBinding::new("cmd-left", Home, INPUT_CONTEXT),
+        gpui::KeyBinding::new("cmd-right", End, INPUT_CONTEXT),
+        gpui::KeyBinding::new("cmd-shift-left", SelectHome, INPUT_CONTEXT),
+        gpui::KeyBinding::new("cmd-shift-right", SelectEnd, INPUT_CONTEXT),
+        gpui::KeyBinding::new("cmd-up", DocumentStart, INPUT_CONTEXT),
+        gpui::KeyBinding::new("cmd-down", DocumentEnd, INPUT_CONTEXT),
+        gpui::KeyBinding::new("cmd-shift-up", SelectDocumentStart, INPUT_CONTEXT),
+        gpui::KeyBinding::new("cmd-shift-down", SelectDocumentEnd, INPUT_CONTEXT),
+        gpui::KeyBinding::new("cmd-backspace", DeleteToBeginningOfLine, INPUT_CONTEXT),
+        gpui::KeyBinding::new("cmd-delete", DeleteToEndOfLine, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-a", Home, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-e", End, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-shift-a", SelectHome, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-shift-e", SelectEnd, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-b", Left, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-f", Right, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-p", Up, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-n", Down, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-h", Backspace, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-d", Delete, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-k", KillToEndOfLine, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-y", Yank, INPUT_CONTEXT),
     ]);
 
     #[cfg(any(target_os = "windows", target_os = "linux"))]
     cx.bind_keys([
-        gpui::KeyBinding::new("ctrl-a", SelectAll, None),
-        gpui::KeyBinding::new("ctrl-v", Paste, None),
-        gpui::KeyBinding::new("ctrl-c", Copy, None),
-        gpui::KeyBinding::new("ctrl-x", Cut, None),
-        gpui::KeyBinding::new("ctrl-z", Undo, None),
-        gpui::KeyBinding::new("ctrl-y", Redo, None),
-        gpui::KeyBinding::new("ctrl-shift-z", Redo, None),
-        gpui::KeyBinding::new("ctrl-f", Find, None),
-        gpui::KeyBinding::new("ctrl-g", FindNext, None),
-        gpui::KeyBinding::new("ctrl-shift-g", FindPrevious, None),
+        gpui::KeyBinding::new("ctrl-a", SelectAll, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-v", Paste, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-c", Copy, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-x", Cut, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-z", Undo, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-y", Redo, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-shift-z", Redo, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-f", Find, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-g", FindNext, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-shift-g", FindPrevious, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-left", WordLeft, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-right", WordRight, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-shift-left", SelectWordLeft, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-shift-right", SelectWordRight, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-backspace", DeleteWordLeft, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-delete", DeleteWordRight, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-home", DocumentStart, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-end", DocumentEnd, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-shift-home", SelectDocumentStart, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-shift-end", SelectDocumentEnd, INPUT_CONTEXT),
+        gpui::KeyBinding::new("ctrl-insert", Copy, INPUT_CONTEXT),
+        gpui::KeyBinding::new("shift-insert", Paste, INPUT_CONTEXT),
+        gpui::KeyBinding::new("shift-delete", Cut, INPUT_CONTEXT),
     ]);
 }
 
@@ -137,7 +209,7 @@ fn display_offset(raw: &str, masked: bool, raw_offset: usize) -> usize {
 /// Saturates at `text.len()` and always lands on a character boundary, so the
 /// result is safe to slice with even when the platform hands us an offset that
 /// overruns the string or splits a surrogate pair.
-fn utf8_offset_from_utf16(text: &str, utf16_offset: usize) -> usize {
+pub(crate) fn utf8_offset_from_utf16(text: &str, utf16_offset: usize) -> usize {
     let mut utf8_offset = 0;
     let mut utf16_count = 0;
     for ch in text.chars() {
@@ -348,12 +420,71 @@ fn char_kind(character: char) -> CharKind {
     }
 }
 
-fn clamped_char_boundary(content: &str, offset: usize) -> usize {
+pub(crate) fn clamped_char_boundary(content: &str, offset: usize) -> usize {
     let mut offset = offset.min(content.len());
     while !content.is_char_boundary(offset) {
         offset -= 1;
     }
     offset
+}
+
+/// Word navigation skips adjoining whitespace, then one word/punctuation run.
+/// Work on graphemes so accents and emoji are never split by a deletion.
+pub(crate) fn previous_word_boundary(content: &str, offset: usize) -> usize {
+    let offset = clamped_char_boundary(content, offset);
+    let mut boundary = offset;
+    let mut word_kind = None;
+    for (index, grapheme) in content[..offset].grapheme_indices(true).rev() {
+        let kind = char_kind(grapheme.chars().next().expect("nonempty grapheme"));
+        if let Some(previous) = word_kind {
+            if previous != kind {
+                break;
+            }
+        } else if kind != CharKind::Whitespace {
+            word_kind = Some(kind);
+        }
+        boundary = index;
+    }
+    boundary
+}
+
+pub(crate) fn next_word_boundary(content: &str, offset: usize) -> usize {
+    let offset = clamped_char_boundary(content, offset);
+    let mut boundary = offset;
+    let mut word_kind = None;
+    for (index, grapheme) in content[offset..].grapheme_indices(true) {
+        let kind = char_kind(grapheme.chars().next().expect("nonempty grapheme"));
+        if let Some(previous) = word_kind {
+            if previous != kind {
+                break;
+            }
+        } else if kind != CharKind::Whitespace {
+            word_kind = Some(kind);
+        }
+        boundary = offset + index + grapheme.len();
+    }
+    boundary
+}
+
+pub(crate) fn line_start(content: &str, offset: usize) -> usize {
+    let offset = clamped_char_boundary(content, offset);
+    content[..offset].rfind('\n').map_or(0, |index| index + 1)
+}
+
+pub(crate) fn line_end(content: &str, offset: usize) -> usize {
+    let offset = clamped_char_boundary(content, offset);
+    content[offset..]
+        .find('\n')
+        .map_or(content.len(), |index| offset + index)
+}
+
+pub(crate) fn kill_line_end(content: &str, offset: usize) -> usize {
+    let end = line_end(content, offset);
+    if end == offset && end < content.len() {
+        end + 1
+    } else {
+        end
+    }
 }
 
 fn surrounding_run(content: &str, offset: usize) -> (Range<usize>, Option<CharKind>) {
@@ -435,8 +566,7 @@ pub(crate) fn render_find_bar(
         format!("{} / {total}", active.unwrap_or(0) + 1)
     };
     let control = |element_id, label: &'static str, icon_name: IconName| {
-        div()
-            .id((element_id, id))
+        crate::keyboard::interactive(div().id((element_id, id)))
             .role(gpui::Role::Button)
             .aria_label(label)
             .flex()
@@ -507,7 +637,9 @@ pub(crate) fn render_find_bar(
 impl TextInput {
     pub fn new(cx: &mut Context<Self>, placeholder: impl Into<SharedString>) -> Self {
         Self {
-            focus_handle: cx.focus_handle(),
+            // Explicit tracked handles own their tab-stop flag; the rendered
+            // Div's .tab_stop(true) only applies to automatically made handles.
+            focus_handle: cx.focus_handle().tab_stop(true),
             content: SharedString::default(),
             placeholder: placeholder.into(),
             selected_range: 0..0,
@@ -690,52 +822,52 @@ impl TextInput {
         starts[line_idx] + col.min(line_len)
     }
 
-    fn up(&mut self, _: &Up, _window: &mut Window, cx: &mut Context<Self>) {
-        if !self.code {
-            self.move_to(self.previous_boundary(self.cursor_offset()), cx);
-            return;
+    fn vertical_offset(&self, delta: isize) -> usize {
+        let cursor = self.cursor_offset();
+        if !self.multiline {
+            return if delta < 0 { 0 } else { self.content.len() };
         }
-        let (line, col) = self.line_index_for_offset(self.cursor_offset());
-        if line == 0 {
-            self.move_to(0, cx);
-            return;
-        }
-        let x = self
-            .code_line(line)
-            .map(|l| l.x_for_index(col))
-            .unwrap_or(px(0.));
+        let (line, col) = self.line_index_for_offset(cursor);
         let starts = self.line_starts();
-        let target = line - 1;
+        let target = line as isize + delta;
+        if target < 0 {
+            return 0;
+        }
+        if target as usize >= starts.len() {
+            return self.content.len();
+        }
+        let target = target as usize;
+        let source_text = &self.content[starts[line]..cursor];
+        let target_text =
+            &self.content[starts[target]..starts[target] + self.line_len(target, &starts)];
+        let fallback_col = target_text
+            .grapheme_indices(true)
+            .nth(source_text.graphemes(true).count())
+            .map_or(target_text.len(), |(index, _)| index);
         let target_col = self
-            .code_line(target)
-            .map(|l| l.closest_index_for_x(x))
-            .unwrap_or(0);
-        let offset = starts[target] + target_col.min(self.line_len(target, &starts));
-        self.move_to(offset, cx);
+            .code_line(line)
+            .zip(self.code_line(target))
+            .filter(|_| self.code)
+            .map_or(fallback_col, |(source, target)| {
+                target.closest_index_for_x(source.x_for_index(col))
+            });
+        starts[target] + clamped_char_boundary(target_text, target_col)
     }
 
-    fn down(&mut self, _: &Down, _window: &mut Window, cx: &mut Context<Self>) {
-        if !self.code {
-            self.move_to(self.next_boundary(self.cursor_offset()), cx);
-            return;
-        }
-        let (line, col) = self.line_index_for_offset(self.cursor_offset());
-        let starts = self.line_starts();
-        if line + 1 >= starts.len() {
-            self.move_to(self.content.len(), cx);
-            return;
-        }
-        let x = self
-            .code_line(line)
-            .map(|l| l.x_for_index(col))
-            .unwrap_or(px(0.));
-        let target = line + 1;
-        let target_col = self
-            .code_line(target)
-            .map(|l| l.closest_index_for_x(x))
-            .unwrap_or(0);
-        let offset = starts[target] + target_col.min(self.line_len(target, &starts));
-        self.move_to(offset, cx);
+    fn up(&mut self, _: &Up, _: &mut Window, cx: &mut Context<Self>) {
+        self.move_to(self.vertical_offset(-1), cx);
+    }
+
+    fn down(&mut self, _: &Down, _: &mut Window, cx: &mut Context<Self>) {
+        self.move_to(self.vertical_offset(1), cx);
+    }
+
+    fn select_up(&mut self, _: &SelectUp, _: &mut Window, cx: &mut Context<Self>) {
+        self.select_to(self.vertical_offset(-1), cx);
+    }
+
+    fn select_down(&mut self, _: &SelectDown, _: &mut Window, cx: &mut Context<Self>) {
+        self.select_to(self.vertical_offset(1), cx);
     }
 
     /// Render the masked variant (secrets shown as bullets).
@@ -1028,22 +1160,165 @@ impl TextInput {
     }
 
     fn home(&mut self, _: &Home, _: &mut Window, cx: &mut Context<Self>) {
-        if self.code {
-            let (line, _) = self.line_index_for_offset(self.cursor_offset());
-            let starts = self.line_starts();
-            self.move_to(starts[line], cx);
-        } else {
-            self.move_to(0, cx);
-        }
+        self.move_to(line_start(&self.content, self.cursor_offset()), cx);
     }
 
     fn end(&mut self, _: &End, _: &mut Window, cx: &mut Context<Self>) {
-        if self.code {
-            let (line, _) = self.line_index_for_offset(self.cursor_offset());
-            let starts = self.line_starts();
-            self.move_to(starts[line] + self.line_len(line, &starts), cx);
+        self.move_to(line_end(&self.content, self.cursor_offset()), cx);
+    }
+
+    fn select_home(&mut self, _: &SelectHome, _: &mut Window, cx: &mut Context<Self>) {
+        self.select_to(line_start(&self.content, self.cursor_offset()), cx);
+    }
+
+    fn select_end(&mut self, _: &SelectEnd, _: &mut Window, cx: &mut Context<Self>) {
+        self.select_to(line_end(&self.content, self.cursor_offset()), cx);
+    }
+
+    fn document_start(&mut self, _: &DocumentStart, _: &mut Window, cx: &mut Context<Self>) {
+        self.move_to(0, cx);
+    }
+
+    fn document_end(&mut self, _: &DocumentEnd, _: &mut Window, cx: &mut Context<Self>) {
+        self.move_to(self.content.len(), cx);
+    }
+
+    fn select_document_start(
+        &mut self,
+        _: &SelectDocumentStart,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.select_to(0, cx);
+    }
+
+    fn select_document_end(
+        &mut self,
+        _: &SelectDocumentEnd,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.select_to(self.content.len(), cx);
+    }
+
+    fn word_left(&mut self, _: &WordLeft, _: &mut Window, cx: &mut Context<Self>) {
+        self.move_to(
+            previous_word_boundary(&self.content, self.cursor_offset()),
+            cx,
+        );
+    }
+
+    fn word_right(&mut self, _: &WordRight, _: &mut Window, cx: &mut Context<Self>) {
+        self.move_to(next_word_boundary(&self.content, self.cursor_offset()), cx);
+    }
+
+    fn select_word_left(&mut self, _: &SelectWordLeft, _: &mut Window, cx: &mut Context<Self>) {
+        self.select_to(
+            previous_word_boundary(&self.content, self.cursor_offset()),
+            cx,
+        );
+    }
+
+    fn select_word_right(&mut self, _: &SelectWordRight, _: &mut Window, cx: &mut Context<Self>) {
+        self.select_to(next_word_boundary(&self.content, self.cursor_offset()), cx);
+    }
+
+    fn delete_to(
+        &mut self,
+        offset: usize,
+        kill: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let cursor = self.cursor_offset();
+        let range = if self.selected_range.is_empty() {
+            cursor.min(offset)..cursor.max(offset)
         } else {
-            self.move_to(self.content.len(), cx);
+            self.selected_range.clone()
+        };
+        if range.is_empty() {
+            window.play_system_bell();
+            return;
+        }
+        if kill {
+            cx.set_global(KillBuffer(self.content[range.clone()].to_string().into()));
+        }
+        self.replace_text_in_range(Some(self.range_to_utf16(&range)), "", window, cx);
+    }
+
+    fn delete_word_left(
+        &mut self,
+        _: &DeleteWordLeft,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.delete_to(
+            previous_word_boundary(&self.content, self.cursor_offset()),
+            false,
+            window,
+            cx,
+        );
+    }
+
+    fn delete_word_right(
+        &mut self,
+        _: &DeleteWordRight,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.delete_to(
+            next_word_boundary(&self.content, self.cursor_offset()),
+            false,
+            window,
+            cx,
+        );
+    }
+
+    fn delete_to_beginning_of_line(
+        &mut self,
+        _: &DeleteToBeginningOfLine,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.delete_to(
+            line_start(&self.content, self.cursor_offset()),
+            false,
+            window,
+            cx,
+        );
+    }
+
+    fn delete_to_end_of_line(
+        &mut self,
+        _: &DeleteToEndOfLine,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.delete_to(
+            line_end(&self.content, self.cursor_offset()),
+            false,
+            window,
+            cx,
+        );
+    }
+
+    fn kill_to_end_of_line(
+        &mut self,
+        _: &KillToEndOfLine,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.delete_to(
+            kill_line_end(&self.content, self.cursor_offset()),
+            true,
+            window,
+            cx,
+        );
+    }
+
+    fn yank(&mut self, _: &Yank, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(text) = cx.try_global::<KillBuffer>().map(|buffer| buffer.0.clone()) {
+            self.replace_text_in_range(None, &text, window, cx);
         }
     }
 
@@ -1173,6 +1448,7 @@ impl TextInput {
     fn move_to(&mut self, offset: usize, cx: &mut Context<Self>) {
         self.selected_range = offset..offset;
         self.selection_reversed = false;
+        self.scroll_selection_into_view();
         self.reset_caret_blink(cx);
         cx.notify()
     }
@@ -1227,6 +1503,7 @@ impl TextInput {
             self.selection_reversed = !self.selection_reversed;
             self.selected_range = self.selected_range.end..self.selected_range.start;
         }
+        self.scroll_selection_into_view();
         self.reset_caret_blink(cx);
         cx.notify()
     }
@@ -1708,6 +1985,24 @@ impl Render for TextInput {
             .on_action(cx.listener(Self::down))
             .on_action(cx.listener(Self::select_left))
             .on_action(cx.listener(Self::select_right))
+            .on_action(cx.listener(Self::select_up))
+            .on_action(cx.listener(Self::select_down))
+            .on_action(cx.listener(Self::word_left))
+            .on_action(cx.listener(Self::word_right))
+            .on_action(cx.listener(Self::select_word_left))
+            .on_action(cx.listener(Self::select_word_right))
+            .on_action(cx.listener(Self::select_home))
+            .on_action(cx.listener(Self::select_end))
+            .on_action(cx.listener(Self::document_start))
+            .on_action(cx.listener(Self::document_end))
+            .on_action(cx.listener(Self::select_document_start))
+            .on_action(cx.listener(Self::select_document_end))
+            .on_action(cx.listener(Self::delete_word_left))
+            .on_action(cx.listener(Self::delete_word_right))
+            .on_action(cx.listener(Self::delete_to_beginning_of_line))
+            .on_action(cx.listener(Self::delete_to_end_of_line))
+            .on_action(cx.listener(Self::kill_to_end_of_line))
+            .on_action(cx.listener(Self::yank))
             .on_action(cx.listener(Self::select_all))
             .on_action(cx.listener(Self::home))
             .on_action(cx.listener(Self::end))
@@ -1771,7 +2066,7 @@ impl Render for TextInput {
                 element.px_3().py_2()
             });
         if self.code {
-            base.font_family("Menlo")
+            base.font_family(crate::assets::monospace_font_family())
                 .relative()
                 .overflow_hidden()
                 .h(px(380.))
@@ -2172,15 +2467,254 @@ impl Element for CodeElement {
 #[cfg(test)]
 mod tests {
     use gpui::{
-        Bounds, Context, Entity, Focusable, IntoElement, Render, TestAppContext, div, point,
-        prelude::*, px, size,
+        Bounds, ClipboardItem, Context, Entity, EntityInputHandler, Focusable, IntoElement,
+        KeyUpEvent, Keystroke, Render, TestAppContext, VisualTestContext, div, point, prelude::*,
+        px, size,
     };
 
     use super::{
         CaretBlink, TextInput, accessible_value, bind_keys, closest_match, code_visible_rows,
         display_offset, extend_word_selection, find_matches, horizontal_scroll_for_caret,
-        raw_offset_from_display, surrounding_word_range, utf8_offset_from_utf16,
+        next_word_boundary, previous_word_boundary, raw_offset_from_display,
+        surrounding_word_range, utf8_offset_from_utf16,
     };
+
+    fn press(cx: &mut VisualTestContext, keys: &str) {
+        for key in keys.split_whitespace() {
+            cx.simulate_keystrokes(key);
+            cx.simulate_event(KeyUpEvent {
+                keystroke: Keystroke::parse(key).unwrap(),
+            });
+        }
+    }
+
+    fn primary(key: &str) -> String {
+        format!(
+            "{}-{key}",
+            if cfg!(target_os = "macos") {
+                "cmd"
+            } else {
+                "ctrl"
+            }
+        )
+    }
+
+    #[gpui::test]
+    fn clipboard_and_history_shortcuts_reach_a_focused_masked_input(cx: &mut TestAppContext) {
+        cx.update(bind_keys);
+        let (input, cx) = cx.add_window_view(|window, cx| {
+            let input = TextInput::new(cx, "secret")
+                .masked(true)
+                .with_content("synthetic-你好🙂");
+            input.focus_handle.focus(window, cx);
+            input
+        });
+
+        press(cx, &format!("{} {}", primary("a"), primary("c")));
+        cx.update(|_, cx| {
+            assert_eq!(
+                cx.read_from_clipboard()
+                    .and_then(|item| item.text())
+                    .as_deref(),
+                Some("synthetic-你好🙂")
+            );
+        });
+        press(cx, &primary("x"));
+        input.read_with(cx, |input, _| assert!(input.content.is_empty()));
+        press(cx, &primary("z"));
+        input.read_with(cx, |input, _| {
+            assert_eq!(input.content.as_ref(), "synthetic-你好🙂")
+        });
+        press(cx, &primary("shift-z"));
+        input.read_with(cx, |input, _| assert!(input.content.is_empty()));
+        press(cx, &primary("v"));
+        input.read_with(cx, |input, _| {
+            assert_eq!(input.content.as_ref(), "synthetic-你好🙂");
+            assert_eq!(
+                input.selected_range,
+                input.content.len()..input.content.len()
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn word_selection_and_deletion_preserve_unicode_and_undo_selection(cx: &mut TestAppContext) {
+        cx.update(bind_keys);
+        let (input, cx) = cx.add_window_view(|window, cx| {
+            let input = TextInput::new(cx, "name").with_content("alpha cafe\u{301} 变量🙂");
+            input.focus_handle.focus(window, cx);
+            input
+        });
+        let modifier = if cfg!(target_os = "macos") {
+            "alt"
+        } else {
+            "ctrl"
+        };
+        press(cx, &format!("{modifier}-backspace"));
+        input.read_with(cx, |input, _| {
+            assert_eq!(input.content.as_ref(), "alpha cafe\u{301} 变量")
+        });
+        press(cx, &format!("{modifier}-shift-left {}", primary("c")));
+        cx.update(|_, cx| {
+            assert_eq!(
+                cx.read_from_clipboard()
+                    .and_then(|item| item.text())
+                    .as_deref(),
+                Some("变量")
+            );
+        });
+        press(cx, &format!("{modifier}-backspace"));
+        input.read_with(cx, |input, _| {
+            assert_eq!(input.content.as_ref(), "alpha cafe\u{301} ")
+        });
+        press(cx, &primary("z"));
+        input.read_with(cx, |input, _| {
+            assert_eq!(&input.content[input.selected_range.clone()], "变量");
+            assert!(input.selection_reversed);
+        });
+        press(cx, &format!("right {modifier}-left {modifier}-backspace"));
+        input.read_with(cx, |input, _| {
+            assert_eq!(input.content.as_ref(), "alpha 变量")
+        });
+    }
+
+    #[cfg(target_os = "macos")]
+    #[gpui::test]
+    fn mac_line_document_and_control_editing_shortcuts_work(cx: &mut TestAppContext) {
+        cx.update(bind_keys);
+        let (input, cx) = cx.add_window_view(|window, cx| {
+            let input = TextInput::new(cx, "config")
+                .code(true)
+                .with_content("first line\nsecond line");
+            input.focus_handle.focus(window, cx);
+            input
+        });
+        cx.update(|_, cx| {
+            cx.write_to_clipboard(ClipboardItem::new_string("keep clipboard".into()))
+        });
+        press(cx, "cmd-left ctrl-k");
+        input.read_with(cx, |input, _| {
+            assert_eq!(input.content.as_ref(), "first line\n")
+        });
+        press(cx, "ctrl-y cmd-up ctrl-e");
+        input.read_with(cx, |input, _| assert_eq!(input.selected_range, 10..10));
+        // At a line end, Control-K removes the newline and Control-Y restores it.
+        press(cx, "ctrl-k ctrl-y cmd-up ctrl-a cmd-shift-down");
+        input.read_with(cx, |input, _| {
+            assert_eq!(input.content.as_ref(), "first line\nsecond line");
+            assert_eq!(input.selected_range, 0..input.content.len());
+        });
+        cx.update(|_, cx| {
+            assert_eq!(
+                cx.read_from_clipboard()
+                    .and_then(|item| item.text())
+                    .as_deref(),
+                Some("keep clipboard")
+            );
+        });
+        press(cx, "cmd-down cmd-backspace");
+        input.read_with(cx, |input, _| {
+            assert_eq!(input.content.as_ref(), "first line\n")
+        });
+        press(cx, "cmd-z cmd-shift-left");
+        input.read_with(cx, |input, _| {
+            assert_eq!(&input.content[input.selected_range.clone()], "second line")
+        });
+    }
+
+    #[gpui::test]
+    fn completed_composition_remains_editable_with_shortcuts(cx: &mut TestAppContext) {
+        cx.update(bind_keys);
+        let (input, cx) = cx.add_window_view(|window, cx| {
+            let input = TextInput::new(cx, "name").with_content("prefix ");
+            input.focus_handle.focus(window, cx);
+            input
+        });
+        cx.update(|window, cx| {
+            input.update(cx, |input, cx| {
+                input.replace_and_mark_text_in_range(None, "你好🙂", Some(4..4), window, cx);
+                input.replace_text_in_range(None, "你好🙂", window, cx);
+            })
+        });
+        press(cx, &format!("shift-left {} backspace", primary("c")));
+        input.read_with(cx, |input, _| {
+            assert_eq!(input.content.as_ref(), "prefix 你好")
+        });
+        cx.update(|_, cx| {
+            assert_eq!(
+                cx.read_from_clipboard()
+                    .and_then(|item| item.text())
+                    .as_deref(),
+                Some("🙂")
+            );
+        });
+        press(cx, &format!("{} {}", primary("z"), primary("z")));
+        input.read_with(cx, |input, _| assert_eq!(input.content.as_ref(), "prefix "));
+    }
+
+    #[gpui::test]
+    fn extending_code_selection_keeps_the_active_end_inside_the_viewport(cx: &mut TestAppContext) {
+        cx.update(bind_keys);
+        let content = (0..80)
+            .map(|row| format!("row {row:02} α🙂"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let (input, cx) = cx.add_window_view(|window, cx| {
+            let mut input = TextInput::new(cx, "config")
+                .code(true)
+                .with_content(content.clone());
+            input.selected_range = 0..0;
+            input.focus_handle.focus(window, cx);
+            input
+        });
+        cx.simulate_resize(size(px(240.), px(440.)));
+        let (start, select_end, select_start) = if cfg!(target_os = "macos") {
+            ("cmd-up", "cmd-shift-down", "cmd-shift-up")
+        } else {
+            ("ctrl-home", "ctrl-shift-end", "ctrl-shift-home")
+        };
+        press(cx, start);
+        input.read_with(cx, |input, _| {
+            assert!(input.scroll_handle.max_offset().y > px(0.));
+            assert_eq!(input.scroll_handle.offset().y, px(0.));
+        });
+        press(cx, select_end);
+        input.read_with(cx, |input, _| {
+            assert_eq!(input.content.as_ref(), content);
+            assert_eq!(input.selected_range, 0..content.len());
+            let viewport_top = -input.scroll_handle.offset().y;
+            let viewport_bottom = viewport_top + input.scroll_handle.bounds().size.height;
+            let row_top = input.code_line_height * 79.;
+            assert!(viewport_top > px(0.), "extension must scroll the document");
+            assert!(row_top >= viewport_top - px(1.));
+            assert!(row_top + input.code_line_height <= viewport_bottom + px(1.));
+            assert!(
+                input.code_first_row > 0,
+                "the bottom rows must actually be painted"
+            );
+        });
+        press(cx, select_start);
+        input.read_with(cx, |input, _| {
+            assert_eq!(input.selected_range, 0..0);
+            assert_eq!(input.scroll_handle.offset().y, px(0.));
+            assert_eq!(input.content.as_ref(), content);
+        });
+    }
+
+    #[test]
+    fn word_boundaries_keep_combining_marks_and_emoji_intact() {
+        let content = "cafe\u{301} 👨‍👩‍👧‍👦 变量";
+        let emoji_start = content.find('👨').unwrap();
+        let chinese_start = content.find('变').unwrap();
+        assert_eq!(previous_word_boundary(content, emoji_start), 0);
+        assert_eq!(next_word_boundary(content, 0), emoji_start - 1);
+        assert_eq!(next_word_boundary(content, emoji_start), chinese_start - 1);
+        assert_eq!(previous_word_boundary(content, chinese_start), emoji_start);
+        assert_eq!(
+            previous_word_boundary(content, content.len()),
+            chinese_start
+        );
+    }
 
     struct EnterProbe {
         input: Entity<TextInput>,

@@ -58,3 +58,7 @@
 "common.row.navigate.aria" = "{label}，打开子页面"
 "common.row.select.aria" = "{label}：{value}"
 "common.segmented.option.aria" = "{id} 选项 {option}"
+"common.window.close" = "关闭窗口"
+"common.window.maximize" = "最大化窗口"
+"common.window.minimize" = "最小化窗口"
+"common.window.restore" = "还原窗口"
