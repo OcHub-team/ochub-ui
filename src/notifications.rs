@@ -4,6 +4,21 @@
 //! policy. This module never writes notification contents to disk and never
 //! turns message text into a business action.
 
+gpui::actions!(ochub_ui_notifications, [BlockFormSubmit]);
+
+/// A read-only notification overlay must not submit forms behind it.
+pub fn bind_keys(cx: &mut gpui::App) {
+    cx.bind_keys([
+        gpui::KeyBinding::new("cmd-s", BlockFormSubmit, Some("OcHubNotificationCenter")),
+        gpui::KeyBinding::new("ctrl-s", BlockFormSubmit, Some("OcHubNotificationCenter")),
+        gpui::KeyBinding::new(
+            "escape",
+            crate::modal::Dismiss,
+            Some("OcHubNotificationCenter"),
+        ),
+    ]);
+}
+
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
@@ -912,6 +927,8 @@ impl NotificationHost {
                 .expect("center focus initialized"),
             card,
         )
+        .key_context("OcHubModal OcHubNotificationCenter")
+        .on_action(|_: &BlockFormSubmit, _, _| {})
         .items_start()
         .justify_end()
         .pt(px(64.))
@@ -1041,15 +1058,11 @@ mod tests {
                 div()
                     .relative()
                     .size_full()
-                    .child(
-                        div()
-                            .id("background-action")
-                            .absolute()
-                            .inset_0()
-                            .on_click(cx.listener(|this, _, _, _| {
-                                this.background_clicks += 1;
-                            })),
-                    )
+                    .child(div().id("background-action").absolute().inset_0().on_click(
+                        cx.listener(|this, _, _, _| {
+                            this.background_clicks += 1;
+                        }),
+                    ))
                     .child(self.host.clone())
             }
         }

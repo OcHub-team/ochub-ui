@@ -22,6 +22,7 @@ pub mod modal;
 pub mod navigation;
 pub mod notifications;
 pub mod scrollbar;
+pub mod select;
 pub mod table;
 pub mod text_input;
 pub mod theme;
@@ -44,4 +45,8 @@ pub fn install(cx: &mut gpui::App) {
     code_editor::bind_keys(cx);
     layout::bind_keys(cx);
     modal::bind_keys(cx);
+    notifications::bind_keys(cx);
 }
+
+#[cfg(test)]
+mod interaction_tests;

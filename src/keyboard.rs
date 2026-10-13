@@ -29,6 +29,7 @@ pub fn interactive(control: Stateful<Div>) -> Stateful<Div> {
 /// Install a window-wide tab fallback. A modal may handle these actions first,
 /// and editors may keep a more specific Tab binding for inserting indentation.
 pub fn bind_keys(cx: &mut App) {
+    crate::select::bind_keys(cx);
     cx.bind_keys([
         KeyBinding::new("tab", FocusNext, None),
         KeyBinding::new("shift-tab", FocusPrevious, None),
