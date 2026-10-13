@@ -9,12 +9,14 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    Animation, AnimationExt, App, Bounds, ClipboardItem, Context, FontWeight, IntoElement,
-    RenderOnce, Rgba, SharedString, Window, canvas, div, fill, point, prelude::*, px, size,
+    Animation, AnimationExt, ClipboardItem, Context, FocusHandle, FontWeight, IntoElement,
+    SharedString, Window, canvas, div, prelude::*, px,
 };
 
 use crate::anim::Transition;
+use crate::i18n::{k, t};
 use crate::icons::{IconName, icon};
+use crate::keyboard;
 use crate::theme;
 
 const MAX_VISIBLE: usize = 3;
@@ -23,17 +25,21 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(3);
 const ERROR_TIMEOUT: Duration = Duration::from_secs(5);
 const STACK_LAYER_OFFSET: f32 = 6.;
 const STACK_LAYER_INSET: f32 = 5.;
-const TOAST_WIDTH: f32 = 380.;
+const TOAST_WIDTH: f32 = 350.;
+const TOAST_MARGIN: f32 = 16.;
+const TOAST_TOP: f32 = 56.;
+const TOAST_CONTENT_HEIGHT: f32 = 144.;
+const TOAST_CHROME_HEIGHT: f32 = 22.; // Vertical padding and the card border.
 /// Vertical breathing room between toasts once the stack stands open.
 const TOAST_GAP: f32 = 8.;
 const STACK_TRANSITION: Duration = Duration::from_millis(220);
 const TOAST_ENTRY: Duration = Duration::from_millis(240);
 /// How far a new toast travels in from its anchored right edge.
-const TOAST_ENTRY_SLIDE: f32 = 24.;
+const TOAST_ENTRY_SLIDE: f32 = 10.;
 /// Height a toast is assumed to want for the single frame between joining a
 /// stack and being measured. Roughly a title-only card, which is the shortest a
 /// toast gets — erring low keeps the deck from visibly settling downward.
-const ASSUMED_TOAST_HEIGHT: f32 = 56.;
+const ASSUMED_TOAST_HEIGHT: f32 = 46.;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NotificationLevel {
@@ -44,32 +50,12 @@ pub enum NotificationLevel {
 }
 
 impl NotificationLevel {
-    fn colors(self) -> (gpui::Rgba, gpui::Rgba, gpui::Rgba, IconName) {
+    fn accent_icon(self) -> (gpui::Rgba, IconName) {
         match self {
-            Self::Info => (
-                theme::accent_soft(),
-                theme::accent(),
-                theme::text(),
-                IconName::Message,
-            ),
-            Self::Success => (
-                theme::green_soft(),
-                theme::green(),
-                theme::text(),
-                IconName::Check,
-            ),
-            Self::Warning => (
-                theme::yellow_soft(),
-                theme::yellow(),
-                theme::text(),
-                IconName::Diamond,
-            ),
-            Self::Error => (
-                theme::red_soft(),
-                theme::red(),
-                theme::text(),
-                IconName::Close,
-            ),
+            Self::Info => (theme::accent(), IconName::Message),
+            Self::Success => (theme::green(), IconName::Check),
+            Self::Warning => (theme::yellow(), IconName::Diamond),
+            Self::Error => (theme::red(), IconName::Close),
         }
     }
 
@@ -176,6 +162,9 @@ pub struct NotificationHost {
     /// Pointer presence over the host. Drives both the countdown hold and, for
     /// a multi-toast stack, whether it stands expanded.
     hovered: bool,
+    focused: bool,
+    focus_scope: Option<FocusHandle>,
+    measured_layout: Option<(u32, u32)>,
     /// `0` is the collapsed deck, `1` the open stack. Reversible mid-flight, so
     /// a pointer that leaves halfway retreats from where it was rather than
     /// finishing the trip first.
@@ -190,115 +179,14 @@ pub struct NotificationHost {
     heights: Rc<RefCell<HashMap<u64, f32>>>,
 }
 
-/// A fixed-size canvas keeps the countdown animation out of layout. The wider,
-/// translucent layer is the glow; the one-pixel layer is the crisp progress line.
-///
-/// The rail redraws itself once per display frame while the countdown is
-/// running. Driving it from a background timer instead would sample the
-/// countdown at a rate unrelated to the refresh cadence, so each repaint would
-/// advance the line by an uneven distance and the motion would read as stutter.
-#[derive(IntoElement)]
-struct ToastProgress {
-    accent: Rgba,
-    duration: Duration,
-    remaining: Duration,
-    started_at: Option<Instant>,
+fn toast_width(viewport_width: f32) -> f32 {
+    (viewport_width - TOAST_MARGIN * 2.).clamp(0., TOAST_WIDTH)
 }
 
-impl ToastProgress {
-    fn new(
-        accent: Rgba,
-        duration: Duration,
-        remaining: Duration,
-        started_at: Option<Instant>,
-    ) -> Self {
-        Self {
-            accent,
-            duration,
-            remaining,
-            started_at,
-        }
-    }
-}
-
-impl RenderOnce for ToastProgress {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        let accent = self.accent;
-        let duration = self.duration;
-        let remaining = self.remaining;
-        let started_at = self.started_at;
-
-        canvas(
-            move |_bounds, _window, _cx| (),
-            move |bounds, _prepaint, window, cx| {
-                let x = f32::from(bounds.origin.x);
-                let y = f32::from(bounds.origin.y);
-                let width = f32::from(bounds.size.width).max(0.);
-                let reduce_motion = cx.reduce_motion();
-                let progress = if reduce_motion {
-                    1.
-                } else {
-                    remaining_duration_fraction(duration, remaining, started_at)
-                };
-
-                // `started_at` is cleared while the toast is hovered, which holds the
-                // rail at its paused width; there is nothing to animate until the
-                // pointer leaves and the host re-renders us with a fresh instant.
-                let is_running = !reduce_motion && started_at.is_some() && progress > 0.;
-                if is_running {
-                    window.request_animation_frame();
-                }
-
-                // A faint full-width rail remains visible when reduced motion is enabled.
-                window.paint_quad(fill(
-                    Bounds::new(point(px(x), px(y + 1.)), size(px(width), px(1.))),
-                    accent.alpha(0.13),
-                ));
-
-                let active_width = width * progress;
-                if active_width <= 0. {
-                    return;
-                }
-
-                window.paint_quad(
-                    fill(
-                        Bounds::new(point(px(x), px(y)), size(px(active_width), px(3.))),
-                        accent.alpha(0.22),
-                    )
-                    .corner_radii(px(1.5)),
-                );
-                window.paint_quad(
-                    fill(
-                        Bounds::new(point(px(x), px(y + 1.)), size(px(active_width), px(1.))),
-                        accent.alpha(0.96),
-                    )
-                    .corner_radii(px(0.5)),
-                );
-            },
-        )
-        .w_full()
-        .h_full()
-    }
-}
-
-fn remaining_fraction(duration: Duration, elapsed: Duration) -> f32 {
-    if duration.is_zero() {
-        return 0.;
-    }
-
-    (duration.saturating_sub(elapsed).as_secs_f32() / duration.as_secs_f32()).clamp(0., 1.)
-}
-
-fn remaining_duration_fraction(
-    duration: Duration,
-    remaining: Duration,
-    started_at: Option<Instant>,
-) -> f32 {
-    let elapsed = started_at.map_or(Duration::ZERO, |started_at| started_at.elapsed());
-    remaining_fraction(
-        duration,
-        duration.saturating_sub(remaining.saturating_sub(elapsed)),
-    )
+fn toast_content_height(viewport_height: f32, count: usize) -> f32 {
+    let count = count.max(1) as f32;
+    let available = (viewport_height - TOAST_TOP - TOAST_MARGIN - TOAST_GAP * (count - 1.)) / count;
+    (available - TOAST_CHROME_HEIGHT).clamp(24., TOAST_CONTENT_HEIGHT)
 }
 
 /// Where one toast sits at a given point in the collapse/expand transition.
@@ -369,6 +257,9 @@ impl NotificationHost {
             visible: VecDeque::new(),
             history: VecDeque::new(),
             hovered: false,
+            focused: false,
+            focus_scope: None,
+            measured_layout: None,
             stack: Transition::settled(0., STACK_TRANSITION),
             heights: Rc::new(RefCell::new(HashMap::new())),
         }
@@ -436,7 +327,9 @@ impl NotificationHost {
         // A toast that lands while the user is already reading the stack starts
         // held, exactly as if it had been paused on arrival. Starting its clock
         // here would let it expire under a pointer that never left.
-        let countdown_started_at = timeout.filter(|_| !self.hovered).map(|_| Instant::now());
+        let countdown_started_at = timeout
+            .filter(|_| !self.interacting())
+            .map(|_| Instant::now());
         let notification = Notification {
             id,
             level: request.level,
@@ -460,7 +353,7 @@ impl NotificationHost {
         self.prune_heights();
 
         if let Some(timeout) = timeout
-            && !self.hovered
+            && !self.interacting()
         {
             Self::schedule_dismiss(id, timeout, 0, cx);
         }
@@ -472,7 +365,7 @@ impl NotificationHost {
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(timeout).await;
             this.update(cx, |this, cx| {
-                let should_dismiss = !this.hovered
+                let should_dismiss = !this.interacting()
                     && this.visible.iter().any(|notification| {
                         notification.id == id && notification.timer_epoch == timer_epoch
                     });
@@ -493,12 +386,27 @@ impl NotificationHost {
     /// user was reading them, and the stack collapsed out from under the pointer
     /// as soon as it dropped to a single toast. Whether the stack is collapsed,
     /// expanded, or a lone toast, the host is one hover target and one clock.
+    fn interacting(&self) -> bool {
+        self.hovered || self.focused
+    }
+
     fn set_hovered(&mut self, hovered: bool, cx: &mut Context<Self>) {
-        if self.hovered == hovered {
+        let was_interacting = self.interacting();
+        self.hovered = hovered;
+        self.update_countdowns(was_interacting, cx);
+    }
+
+    fn set_focused(&mut self, focused: bool, cx: &mut Context<Self>) {
+        let was_interacting = self.interacting();
+        self.focused = focused;
+        self.update_countdowns(was_interacting, cx);
+    }
+
+    fn update_countdowns(&mut self, was_interacting: bool, cx: &mut Context<Self>) {
+        let interacting = self.interacting();
+        if was_interacting == interacting {
             return;
         }
-        self.hovered = hovered;
-
         let now = Instant::now();
         let mut resume = Vec::new();
         let mut expired = Vec::new();
@@ -508,7 +416,7 @@ impl NotificationHost {
             }
 
             let timer_epoch = notification.invalidate_timer();
-            if hovered {
+            if interacting {
                 notification.hold(now);
             } else {
                 match notification.resume(now) {
@@ -560,10 +468,17 @@ impl NotificationHost {
         let heights = self.heights.clone();
         div().absolute().inset_0().child(
             canvas(
-                move |bounds, _window, _cx| {
+                move |bounds, window, _cx| {
                     let height = f32::from(bounds.size.height);
-                    if height > 0. {
-                        heights.borrow_mut().entry(id).or_insert(height);
+                    if height > 0.
+                        && let std::collections::hash_map::Entry::Vacant(entry) =
+                            heights.borrow_mut().entry(id)
+                    {
+                        entry.insert(height);
+                        // Resizing can invalidate a settled stack after its entry
+                        // animation has ended. Consume the new measurement without
+                        // waiting for another pointer or keyboard event.
+                        window.request_animation_frame();
                     }
                 },
                 |_bounds, _prepaint, _window, _cx| (),
@@ -581,14 +496,12 @@ impl NotificationHost {
         notification: Notification,
         content_opacity: f32,
         fill_slot: bool,
+        max_content_height: f32,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let id = notification.id;
-        let (bg, accent, fg, icon_name) = notification.level.colors();
+        let (accent, icon_name) = notification.level.accent_icon();
         let element_id = SharedString::from(format!("notification-{id}"));
-        let auto_dismiss_after = notification.auto_dismiss_after;
-        let remaining = notification.remaining;
-        let countdown_started_at = notification.countdown_started_at;
         let copy_text = [
             Some(notification.title.as_ref()),
             notification.message.as_deref(),
@@ -605,8 +518,51 @@ impl NotificationHost {
         // under reduced motion for free.
         let entry = Animation::new(TOAST_ENTRY).with_easing(crate::anim::ease_out_quint);
 
+        let copy = keyboard::interactive(
+            div()
+                .id(("notification-copy", id))
+                .role(gpui::Role::Button)
+                .aria_label(t(k::NOTIFICATIONS_COPY)),
+        )
+        .flex()
+        .items_center()
+        .justify_center()
+        .size(px(24.))
+        .flex_none()
+        .rounded_md()
+        .cursor_pointer()
+        .hover(|style| style.bg(theme::surface_hover()))
+        .child(icon(IconName::Copy, theme::muted(), 13.))
+        .on_click(move |_event, _window, cx| {
+            cx.write_to_clipboard(ClipboardItem::new_string(copy_text.clone()));
+        });
+        let close = keyboard::interactive(
+            div()
+                .id(("notification-close", id))
+                .role(gpui::Role::Button)
+                .aria_label(t(k::NOTIFICATIONS_DISMISS)),
+        )
+        .flex()
+        .items_center()
+        .justify_center()
+        .size(px(24.))
+        .flex_none()
+        .rounded_md()
+        .cursor_pointer()
+        .hover(|style| style.bg(theme::surface_hover()))
+        .child(icon(IconName::Close, theme::muted(), 13.))
+        .on_click(cx.listener(move |this, _event, _window, cx| {
+            this.dismiss(id);
+            cx.notify();
+        }));
+
         div()
             .id(element_id)
+            .role(if notification.level == NotificationLevel::Error {
+                gpui::Role::Alert
+            } else {
+                gpui::Role::Status
+            })
             .relative()
             .flex()
             .flex_col()
@@ -615,61 +571,64 @@ impl NotificationHost {
             .rounded_lg()
             .overflow_hidden()
             .border_1()
-            .border_color(accent.alpha(0.32))
-            .bg(bg.alpha(0.96))
-            .shadow(theme::shadow_popover())
+            .border_color(theme::border())
+            .bg(theme::panel())
+            .shadow(theme::shadow_hover())
             .child(self.measure_height(id))
             .child(
                 div()
                     .flex()
                     .flex_row()
                     .items_start()
-                    .gap_3()
+                    .gap_2()
+                    .min_h_0()
                     .px_3()
-                    .py_3()
+                    .py(px(10.))
                     .opacity(content_opacity)
                     .child(
                         div()
-                            .mt_0p5()
                             .flex()
                             .items_center()
                             .justify_center()
-                            .w(px(24.))
+                            .w(px(16.))
                             .h(px(24.))
-                            .rounded_md()
-                            .bg(accent.alpha(0.12))
-                            .child(icon(icon_name, accent, 15.)),
+                            .flex_none()
+                            .child(icon(icon_name, accent, 16.)),
                     )
                     .child(
                         div()
+                            .id(("notification-text", id))
                             .flex()
                             .flex_col()
-                            .gap_1()
+                            .gap(px(3.))
                             .flex_1()
-                            .min_w(px(0.))
+                            .min_w_0()
+                            .max_h(px(max_content_height))
+                            .overflow_y_scroll()
+                            .whitespace_normal()
                             .child(
                                 div()
-                                    .text_color(fg)
+                                    .text_color(theme::text())
                                     .text_sm()
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .line_height(px(18.))
+                                    .font_weight(FontWeight::NORMAL)
+                                    .line_height(px(20.))
                                     .child(notification.title),
                             )
-                            .when_some(notification.message, |s, message| {
-                                s.child(
+                            .when_some(notification.message, |column, message| {
+                                column.child(
                                     div()
                                         .text_color(theme::subtext())
-                                        .text_xs()
-                                        .line_height(px(17.))
+                                        .text_size(px(13.))
+                                        .line_height(px(18.))
                                         .child(message),
                                 )
                             })
-                            .when_some(notification.source, |s, source| {
-                                s.child(
+                            .when_some(notification.source, |column, source| {
+                                column.child(
                                     div()
                                         .text_color(theme::muted())
                                         .text_xs()
-                                        .font_weight(FontWeight::MEDIUM)
+                                        .line_height(px(16.))
                                         .child(source),
                                 )
                             }),
@@ -679,66 +638,11 @@ impl NotificationHost {
                             .flex()
                             .flex_row()
                             .items_center()
-                            .gap_1()
-                            .child(
-                                div()
-                                    .id(("notification-copy", id))
-                                    .role(gpui::Role::Button)
-                                    .aria_label("复制通知内容")
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .w(px(22.))
-                                    .h(px(22.))
-                                    .rounded_md()
-                                    .cursor_pointer()
-                                    .text_color(theme::muted())
-                                    .hover(|s| s.bg(accent.alpha(0.12)).text_color(theme::text()))
-                                    .child(icon(IconName::Copy, theme::muted(), 13.))
-                                    .on_click(move |_event, _window, cx| {
-                                        cx.write_to_clipboard(ClipboardItem::new_string(
-                                            copy_text.clone(),
-                                        ));
-                                    }),
-                            )
-                            .child(
-                                div()
-                                    .id(("notification-close", id))
-                                    .role(gpui::Role::Button)
-                                    .aria_label("关闭通知")
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .w(px(22.))
-                                    .h(px(22.))
-                                    .rounded_md()
-                                    .cursor_pointer()
-                                    .text_color(theme::muted())
-                                    .hover(|s| s.bg(accent.alpha(0.12)).text_color(theme::text()))
-                                    .child(icon(IconName::Close, theme::muted(), 13.))
-                                    .on_click(cx.listener(move |this, _event, _window, cx| {
-                                        this.dismiss(id);
-                                        cx.notify();
-                                    })),
-                            ),
+                            .flex_none()
+                            .child(copy)
+                            .child(close),
                     ),
             )
-            .when_some(auto_dismiss_after, |toast, timeout| {
-                toast.child(
-                    div()
-                        .absolute()
-                        .bottom(px(0.))
-                        .left(px(0.))
-                        .right(px(0.))
-                        .h(px(3.))
-                        .child(ToastProgress::new(
-                            accent,
-                            timeout,
-                            remaining.unwrap_or(timeout),
-                            countdown_started_at,
-                        )),
-                )
-            })
             .with_animation(("notification-entry", id), entry, |card, delta| {
                 card.opacity(delta)
                     .left(px((1. - delta) * TOAST_ENTRY_SLIDE))
@@ -783,13 +687,37 @@ pub use crate::impl_status_toasts_leveled;
 
 impl Render for NotificationHost {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.focus_scope.is_none() {
+            let scope = cx.focus_handle().tab_stop(false);
+            cx.on_focus_in(&scope, window, |this, _window, cx| {
+                this.set_focused(true, cx)
+            })
+            .detach();
+            cx.on_focus_out(&scope, window, |this, _event, _window, cx| {
+                this.set_focused(false, cx)
+            })
+            .detach();
+            self.focus_scope = Some(scope);
+        }
+        let viewport = window.viewport_size();
+        let width = toast_width(viewport.width.into());
+        let content_height = toast_content_height(viewport.height.into(), self.visible.len());
+        let layout = (width.to_bits(), content_height.to_bits());
+        if self.measured_layout != Some(layout) {
+            self.heights.borrow_mut().clear();
+            self.measured_layout = Some(layout);
+        }
         let notifications = self.visible.iter().cloned().collect::<Vec<_>>();
         let is_stack = notifications.len() > 1;
         let reduce_motion = cx.reduce_motion();
         let now = Instant::now();
 
         self.stack.retarget(
-            if is_stack && self.hovered { 1. } else { 0. },
+            if is_stack && self.interacting() {
+                1.
+            } else {
+                0.
+            },
             now,
             reduce_motion,
         );
@@ -801,9 +729,10 @@ impl Render for NotificationHost {
         let host = div()
             .id("notification-host")
             .absolute()
-            .top(px(56.))
-            .right_4()
-            .w(px(TOAST_WIDTH))
+            .track_focus(self.focus_scope.as_ref().expect("focus initialized"))
+            .top(px(TOAST_TOP))
+            .right(px(TOAST_MARGIN))
+            .w(px(width))
             .on_hover(cx.listener(|this, hovered: &bool, _window, cx| {
                 this.set_hovered(*hovered, cx);
             }));
@@ -813,9 +742,9 @@ impl Render for NotificationHost {
         // measurement depends on.
         if !is_stack {
             return host.flex().flex_col().gap(px(TOAST_GAP)).children(
-                notifications
-                    .into_iter()
-                    .map(|notification| self.render_notification(notification, 1., false, cx)),
+                notifications.into_iter().map(|notification| {
+                    self.render_notification(notification, 1., false, content_height, cx)
+                }),
             );
         }
 
@@ -861,6 +790,7 @@ impl Render for NotificationHost {
                         notification,
                         slot.content_opacity,
                         fill_slot,
+                        content_height,
                         cx,
                     )),
             );
@@ -875,8 +805,8 @@ mod tests {
 
     use super::{
         DEFAULT_TIMEOUT, ERROR_TIMEOUT, MAX_VISIBLE, Notification, NotificationLevel,
-        STACK_LAYER_INSET, STACK_LAYER_OFFSET, TOAST_GAP, auto_dismiss_timeout, remaining_fraction,
-        stack_height, stack_layout,
+        STACK_LAYER_INSET, STACK_LAYER_OFFSET, TOAST_CHROME_HEIGHT, TOAST_GAP,
+        auto_dismiss_timeout, stack_height, stack_layout, toast_content_height, toast_width,
     };
 
     fn running_toast(timeout: Duration, started_at: Instant) -> Notification {
@@ -1054,7 +984,7 @@ mod tests {
     }
 
     #[test]
-    fn resolves_auto_dismiss_duration_for_progress_bar() {
+    fn resolves_auto_dismiss_duration() {
         assert_eq!(DEFAULT_TIMEOUT, Duration::from_secs(3));
         assert_eq!(ERROR_TIMEOUT, Duration::from_secs(5));
         assert_eq!(MAX_VISIBLE, 3);
@@ -1085,19 +1015,55 @@ mod tests {
     }
 
     #[test]
-    fn calculates_progress_from_absolute_elapsed_time() {
-        assert_eq!(
-            remaining_fraction(Duration::from_secs(3), Duration::ZERO),
-            1.
-        );
-        assert_eq!(
-            remaining_fraction(Duration::from_secs(3), Duration::from_millis(1500)),
-            0.5
-        );
-        assert_eq!(
-            remaining_fraction(Duration::from_secs(3), Duration::from_secs(4)),
-            0.
-        );
-        assert_eq!(remaining_fraction(Duration::ZERO, Duration::ZERO), 0.);
+    fn toast_bounds_fit_narrow_windows_and_full_stacks() {
+        assert_eq!(toast_width(960.), 350.);
+        assert_eq!(toast_width(300.), 268.);
+        assert_eq!(toast_width(20.), 0.);
+        for height in [400., 640., 900.] {
+            let content = toast_content_height(height, 3);
+            assert!(content <= 144.);
+            assert!(3. * (content + TOAST_CHROME_HEIGHT) + 2. * TOAST_GAP + 56. + 16. <= height);
+        }
+    }
+
+    #[gpui::test]
+    fn keyboard_actions_pause_expiry_copy_full_text_and_dismiss(cx: &mut gpui::TestAppContext) {
+        use super::{NotificationHost, NotificationRequest};
+        use gpui::{KeyUpEvent, Keystroke};
+
+        cx.update(crate::keyboard::bind_keys);
+        let (host, cx) = cx.add_window_view(|_, cx| {
+            let mut host = NotificationHost::new();
+            host.notify(
+                NotificationRequest::new(NotificationLevel::Info, "Saved")
+                    .message("Full diagnostic detail"),
+                cx,
+            );
+            host
+        });
+        cx.update(|window, _| window.activate_window());
+        cx.simulate_keystrokes("tab");
+        host.read_with(cx, |host, _| {
+            assert!(
+                host.focused,
+                "notification actions must pause expiry while focused"
+            );
+            assert!(host.visible[0].countdown_started_at.is_none());
+        });
+        cx.simulate_keystrokes("enter");
+        cx.simulate_event(KeyUpEvent {
+            keystroke: Keystroke::parse("enter").unwrap(),
+        });
+        cx.update(|_, cx| {
+            assert_eq!(
+                cx.read_from_clipboard().and_then(|item| item.text()),
+                Some("Saved\nFull diagnostic detail".into())
+            );
+        });
+        cx.simulate_keystrokes("tab space");
+        cx.simulate_event(KeyUpEvent {
+            keystroke: Keystroke::parse("space").unwrap(),
+        });
+        host.read_with(cx, |host, _| assert!(host.visible.is_empty()));
     }
 }
