@@ -2550,10 +2550,11 @@ impl Element for CodeElement {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "macos")]
+    use gpui::ClipboardItem;
     use gpui::{
-        Bounds, ClipboardItem, Context, Entity, EntityInputHandler, Focusable, IntoElement,
-        KeyUpEvent, Keystroke, Render, TestAppContext, VisualTestContext, div, point, prelude::*,
-        px, size,
+        Bounds, Context, Entity, EntityInputHandler, Focusable, IntoElement, KeyUpEvent, Keystroke,
+        Render, TestAppContext, VisualTestContext, div, point, prelude::*, px, size,
     };
 
     use super::{
